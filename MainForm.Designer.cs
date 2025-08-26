@@ -72,7 +72,7 @@ namespace convert_spravochnik_vpk_to_vcard
             this.btnZavodKorpusov.Name = "btnZavodKorpusov";
             this.btnZavodKorpusov.Size = new System.Drawing.Size(150, 40);
             this.btnZavodKorpusov.TabIndex = 3;
-            this.btnZavodKorpusov.Text = "Завод Корпусов";
+            this.btnZavodKorpusov.Text = "ВЗК";
             this.btnZavodKorpusov.UseVisualStyleBackColor = true;
             this.btnZavodKorpusov.Click += new System.EventHandler(this.BtnZavodKorpusov_Click);
             // 

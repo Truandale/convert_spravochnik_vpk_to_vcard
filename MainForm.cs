@@ -43,7 +43,7 @@ namespace convert_spravochnik_vpk_to_vcard
 
         private void BtnZavodKorpusov_Click(object? sender, EventArgs e)
         {
-            MessageBox.Show("Завод Корпусов: Алгоритм в разработке", "Информация");
+            RunParser(new ParserVZK());
         }
 
         private void RunParser(IExcelParser parser)
