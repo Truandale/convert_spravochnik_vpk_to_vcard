@@ -57,38 +57,90 @@ namespace Converter.Parsing
                 var row = sh.GetRow(r);
                 if (row == null) continue;
 
-                string org        = Read(row, idxOrg);
-                string dep        = Read(row, idxDep);
-                string name       = Read(row, idxName);
-                string position   = Read(row, idxPos);
+                string org        = CleanTextQuality(Read(row, idxOrg));
+                string dep        = CleanTextQuality(Read(row, idxDep));
+                string name       = CleanTextQuality(Read(row, idxName));
+                string position   = CleanTextQuality(Read(row, idxPos));
                 string email      = Read(row, idxEmail);
                 string cityCode   = Read(row, idxCityCode);
                 string cityNumber = Read(row, idxCityNumber);
                 string mobile     = Read(row, idxMobile);
                 string internalNo = Read(row, idxInternal);
 
-                // Локация: "Организация / Подразделение"
-                string location = CombineNonEmpty(org, dep, " / ");
+                // Организация для ORG поля (а не Location)
+                string organization = CombineNonEmpty(org, dep, " / ");
 
                 // Телефон по приоритету + нормализация к +7
                 string phone = ChoosePhone(mobile, cityCode, cityNumber);
 
+                // Обработка email: разбиваем на отдельные адреса
+                var emails = SplitEmails(email);
+                string primaryEmail = emails.FirstOrDefault() ?? "";
+
+                // Обработка добавочного номера
+                string cleanInternal = Clean(internalNo);
+                bool isExtension = !string.IsNullOrEmpty(cleanInternal) && 
+                                  cleanInternal.All(char.IsDigit) && 
+                                  cleanInternal.Length >= 3 && 
+                                  cleanInternal.Length <= 5;
+
+                string finalInternalPhone = "";
+                
+                if (isExtension)
+                {
+                    if (!string.IsNullOrEmpty(phone))
+                    {
+                        // Есть основной номер - добавляем extension
+                        phone = $"{phone};ext={cleanInternal}";
+                    }
+                    else
+                    {
+                        // Нет основного номера - добавочный в InternalPhone для NOTE
+                        finalInternalPhone = cleanInternal;
+                    }
+                }
+                else if (!string.IsNullOrEmpty(cleanInternal))
+                {
+                    // Это не добавочный (длинный номер) - пытаемся нормализовать
+                    var normalized = RuPhone.NormalizeToE164RU(cleanInternal);
+                    if (!string.IsNullOrEmpty(normalized))
+                    {
+                        finalInternalPhone = normalized;
+                    }
+                }
+
                 // Пустые полностью строки не тянем
                 if (string.IsNullOrWhiteSpace(name) &&
-                    string.IsNullOrWhiteSpace(email) &&
+                    string.IsNullOrWhiteSpace(primaryEmail) &&
                     string.IsNullOrWhiteSpace(phone) &&
-                    string.IsNullOrWhiteSpace(internalNo))
+                    string.IsNullOrWhiteSpace(finalInternalPhone))
                     continue;
 
-                rows.Add(new NormalizedContactRow
+                var contactRow = new NormalizedContactRow
                 {
-                    Location      = location,
+                    Location      = organization,  // Теперь это правильная организация для ORG
                     Name          = name,
                     Position      = position,
-                    Email         = email,
+                    Email         = primaryEmail,  // Первый email
                     Phone         = phone,
-                    InternalPhone = internalNo
-                });
+                    InternalPhone = finalInternalPhone
+                };
+
+                rows.Add(contactRow);
+
+                // Добавляем дополнительные записи для остальных email адресов
+                for (int i = 1; i < emails.Count; i++)
+                {
+                    rows.Add(new NormalizedContactRow
+                    {
+                        Location      = organization,
+                        Name          = name + $" (email {i + 1})",  // Отличающееся имя для дубликата
+                        Position      = position,
+                        Email         = emails[i],
+                        Phone         = "",  // Только email, телефоны не дублируем
+                        InternalPhone = ""
+                    });
+                }
             }
 
             return VpkNormalizedWorkbookBuilder.BuildTempWorkbook(rows, "VZK_");
@@ -153,6 +205,43 @@ namespace Converter.Parsing
             var x = s.Replace('\u00A0', ' ').Trim();
             while (x.Contains("  ")) x = x.Replace("  ", " ");
             return x;
+        }
+
+        /// <summary>
+        /// Улучшенная очистка текста: убирает двойные пробелы, исправляет склейки
+        /// </summary>
+        private static string CleanTextQuality(string s)
+        {
+            if (string.IsNullOrWhiteSpace(s)) return "";
+            
+            var result = s.Replace('\u00A0', ' ')
+                          .Replace('\r', ' ')
+                          .Replace('\n', ' ')
+                          .Trim();
+            
+            // Убираем множественные пробелы
+            while (result.Contains("  ")) 
+                result = result.Replace("  ", " ");
+            
+            // Исправляем типичные склейки (эвристика)
+            result = System.Text.RegularExpressions.Regex.Replace(result, @"([а-яё])([А-ЯЁ])", "$1 $2");
+            
+            return result;
+        }
+
+        /// <summary>
+        /// Разбивает строку email на отдельные адреса и фильтрует пустые
+        /// </summary>
+        private static List<string> SplitEmails(string emailStr)
+        {
+            if (string.IsNullOrWhiteSpace(emailStr)) return new List<string>();
+            
+            var emails = emailStr.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries)
+                                 .Select(e => e.Trim())
+                                 .Where(e => !string.IsNullOrEmpty(e) && e.Contains("@"))
+                                 .ToList();
+            
+            return emails;
         }
 
         private static string ChoosePhone(string mobile, string cityCode, string cityNumber)

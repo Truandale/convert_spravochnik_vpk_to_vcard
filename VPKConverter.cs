@@ -250,9 +250,10 @@ namespace convert_spravochnik_vpk_to_vcard
                         vCard.Add($"TEL;TYPE=VOICE:{additionalInternalPhone}");
                     }
 
-                    // Адрес
+                    // Адрес - правильный формат vCard 3.0 с 7 полями: PO Box;Extended;Street;Locality;Region;PostalCode;Country
                     if (!string.IsNullOrEmpty(location))
                     {
+                        // Используем location как Street address (3-е поле)
                         vCard.Add($"ADR;TYPE=WORK:;;{Esc(location)};;;;");
                     }
 
