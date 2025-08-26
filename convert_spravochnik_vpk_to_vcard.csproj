@@ -1,0 +1,17 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="EPPlus" Version="7.5.2" />
+    <PackageReference Include="NPOI" Version="2.7.2" />
+    <PackageReference Include="vCardLib.dll" Version="6.0.0" />
+    <PackageReference Include="vCards" Version="1.0.0" />
+  </ItemGroup>
+
+</Project>
