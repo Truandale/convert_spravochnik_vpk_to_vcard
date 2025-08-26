@@ -60,10 +60,10 @@ namespace Converter.Parsing
                     var row = sh.GetRow(r);
                     if (row == null) continue;
 
-                    string org        = Read(row, idxOrg);
-                    string dep        = Read(row, idxDep);
-                    string name       = Read(row, idxName);
-                    string position   = Read(row, idxPos);
+                    string org        = CleanTextQuality(Read(row, idxOrg));
+                    string dep        = CleanTextQuality(Read(row, idxDep));
+                    string name       = CleanTextQuality(Read(row, idxName));
+                    string position   = CleanTextQuality(Read(row, idxPos));
                     string email      = Read(row, idxEmail);
                     string cityCode   = Read(row, idxCityCode);
                     string cityNumber = Read(row, idxCityNumber);
@@ -71,32 +71,67 @@ namespace Converter.Parsing
                     string internalNo = Read(row, idxInternal);
                     string extra      = Read(row, idxExtra);
 
-                    // Локация: "Организация / Подразделение"
-                    string location = CombineNonEmpty(org, dep, " / ");
+                    // Организация для ORG поля
+                    string organization = CombineNonEmpty(org, dep, " / ");
 
                     // Если основного email нет, но в "Дополнительный номер/ e-mail" лежит почта — берём её.
                     if (string.IsNullOrWhiteSpace(email) && IsEmail(extra))
                         email = extra;
 
+                    // Убираем пустые email
+                    email = string.IsNullOrWhiteSpace(email) ? "" : email.Trim();
+
                     // Телефон: приоритет мобильному; если нет — городской (код + номер);
                     // если и этого нет — берём из "Доп. номер", но только если это НЕ e-mail (бывает смешанное поле).
                     string phone = ChoosePhone(mobile, cityCode, cityNumber, extra);
+
+                    // Обработка добавочного номера
+                    string cleanInternal = CleanSpaces(internalNo);
+                    bool isExtension = !string.IsNullOrEmpty(cleanInternal) && 
+                                      cleanInternal.All(char.IsDigit) && 
+                                      cleanInternal.Length >= 3 && 
+                                      cleanInternal.Length <= 5;
+
+                    string finalInternalPhone = "";
+                    
+                    if (isExtension)
+                    {
+                        if (!string.IsNullOrEmpty(phone))
+                        {
+                            // Есть основной номер - добавляем extension
+                            phone = $"{phone};ext={cleanInternal}";
+                        }
+                        else
+                        {
+                            // Нет основного номера - добавочный в InternalPhone для NOTE
+                            finalInternalPhone = cleanInternal;
+                        }
+                    }
+                    else if (!string.IsNullOrEmpty(cleanInternal))
+                    {
+                        // Это не добавочный (длинный номер) - пытаемся нормализовать
+                        var normalized = RuPhone.NormalizeToE164RU(cleanInternal);
+                        if (!string.IsNullOrEmpty(normalized))
+                        {
+                            finalInternalPhone = normalized;
+                        }
+                    }
 
                     // Пустые полностью строки не тащим
                     if (string.IsNullOrWhiteSpace(name) &&
                         string.IsNullOrWhiteSpace(email) &&
                         string.IsNullOrWhiteSpace(phone) &&
-                        string.IsNullOrWhiteSpace(internalNo))
+                        string.IsNullOrWhiteSpace(finalInternalPhone))
                         continue;
 
                     rows.Add(new NormalizedContactRow
                     {
-                        Location      = location,
+                        Location      = organization,  // Теперь это правильная организация для ORG
                         Name          = name,
                         Position      = position,
                         Email         = email,
                         Phone         = phone,
-                        InternalPhone = internalNo
+                        InternalPhone = finalInternalPhone
                     });
                 }
             }
@@ -164,6 +199,28 @@ namespace Converter.Parsing
             var x = s.Replace('\u00A0', ' ').Trim();
             while (x.Contains("  ")) x = x.Replace("  ", " ");
             return x;
+        }
+
+        /// <summary>
+        /// Улучшенная очистка текста: убирает двойные пробелы, исправляет склейки
+        /// </summary>
+        private static string CleanTextQuality(string s)
+        {
+            if (string.IsNullOrWhiteSpace(s)) return "";
+            
+            var result = s.Replace('\u00A0', ' ')
+                          .Replace('\r', ' ')
+                          .Replace('\n', ' ')
+                          .Trim();
+            
+            // Убираем множественные пробелы
+            while (result.Contains("  ")) 
+                result = result.Replace("  ", " ");
+            
+            // Исправляем типичные склейки (эвристика)
+            result = System.Text.RegularExpressions.Regex.Replace(result, @"([а-яё])([А-ЯЁ])", "$1 $2");
+            
+            return result;
         }
 
         private static bool IsEmail(string s)
