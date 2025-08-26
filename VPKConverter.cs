@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Text.RegularExpressions;
 using NPOI.HSSF.UserModel;
 using NPOI.SS.UserModel;
@@ -10,6 +11,19 @@ namespace convert_spravochnik_vpk_to_vcard
 {
     public static class VPKConverter
     {
+        /// <summary>
+        /// Экранирует специальные символы в значениях vCard согласно RFC 2426
+        /// </summary>
+        static string Esc(string? s)
+        {
+            if (string.IsNullOrEmpty(s)) return "";
+            return s.Replace("\\", "\\\\")  // backslash
+                    .Replace(";", "\\;")    // semicolon
+                    .Replace(",", "\\,")    // comma
+                    .Replace("\r\n", "\\n") // CRLF внутри значения
+                    .Replace("\n", "\\n")   // LF -> \n
+                    .Replace("\r", "");     // одиночный CR убрать
+        }
         public static void Convert(string excelFilePath, string vCardFilePath)
         {
             string tempPath = Path.Combine(Path.GetTempPath(), "VPK_temp");
@@ -35,7 +49,7 @@ namespace convert_spravochnik_vpk_to_vcard
             var sheet = workbook.GetSheetAt(0);
             var rowCount = sheet.LastRowNum;
 
-            using (var vCardWriter = new StreamWriter(vCardFilePath, false))
+            using (var vCardWriter = new StreamWriter(vCardFilePath, false, new UTF8Encoding(false)))
             {
                 for (int row = 1; row <= rowCount; row++)
                 {
@@ -70,13 +84,13 @@ namespace convert_spravochnik_vpk_to_vcard
                     {
                         "BEGIN:VCARD",
                         "VERSION:3.0",
-                        $"FN:{name}",
-                        $"ORG:{name}",
-                        $"TITLE:{position}",
-                        $"EMAIL;TYPE=INTERNET:{email}",
+                        $"FN:{Esc(name)}",
+                        $"ORG:{Esc(name)}",
+                        $"TITLE:{Esc(position)}",
+                        $"EMAIL;TYPE=INTERNET:{Esc(email)}",
                         $"TEL;WORK;VOICE:{phone}",
                         $"TEL;CELL;VOICE:{internalPhone}",
-                        $"ADR;WORK;PARCEL:{location};{name}",
+                        $"ADR;TYPE=WORK:;;{Esc(location)};;;;",
                         "NOTE:Дополнительная информация о контакте",
                         "END:VCARD"
                     };
