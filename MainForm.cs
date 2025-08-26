@@ -38,7 +38,7 @@ namespace convert_spravochnik_vpk_to_vcard
 
         private void BtnGroupVPK_Click(object? sender, EventArgs e)
         {
-            MessageBox.Show("Группа ВПК: Алгоритм в разработке", "Информация");
+            RunParser(new ParserGroupVPK());
         }
 
         private void BtnZavodKorpusov_Click(object? sender, EventArgs e)
