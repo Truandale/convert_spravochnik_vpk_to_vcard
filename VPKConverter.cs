@@ -35,6 +35,18 @@ namespace convert_spravochnik_vpk_to_vcard
             if (string.IsNullOrWhiteSpace(phoneStr))
                 return ("", "", new List<string>());
 
+            // Проверяем, есть ли уже готовый ext в строке (от парсеров)
+            if (phoneStr.Contains(";ext="))
+            {
+                var extParts = phoneStr.Split(new[] { ";ext=" }, StringSplitOptions.None);
+                if (extParts.Length == 2)
+                {
+                    var phone = extParts[0].Trim();
+                    var ext = extParts[1].Trim();
+                    return (phone, ext, new List<string>());
+                }
+            }
+
             var phones = new List<string>();
             var extensions = new List<string>();
             
@@ -232,10 +244,30 @@ namespace convert_spravochnik_vpk_to_vcard
                         vCard.Add($"TEL;TYPE=VOICE:{additionalPhone}");
                     }
 
+                    // Дополнительные номера из InternalPhone (обычно добавочные)
+                    foreach (var additionalInternalPhone in additionalInternal)
+                    {
+                        vCard.Add($"TEL;TYPE=VOICE:{additionalInternalPhone}");
+                    }
+
                     // Адрес
                     if (!string.IsNullOrEmpty(location))
                     {
                         vCard.Add($"ADR;TYPE=WORK:;;{Esc(location)};;;;");
+                    }
+
+                    // NOTE для добавочных номеров без основного номера
+                    if (!string.IsNullOrEmpty(internalPhoneNorm) && string.IsNullOrEmpty(workPhone) && string.IsNullOrEmpty(mobilePhone))
+                    {
+                        // Проверяем, является ли это коротким добавочным
+                        if (internalPhoneNorm.All(char.IsDigit) && internalPhoneNorm.Length >= 3 && internalPhoneNorm.Length <= 5)
+                        {
+                            vCard.Add($"NOTE:Добавочный номер: {internalPhoneNorm}");
+                        }
+                        else
+                        {
+                            vCard.Add($"TEL;TYPE=WORK,VOICE:{internalPhoneNorm}");
+                        }
                     }
 
                     vCard.Add("END:VCARD");

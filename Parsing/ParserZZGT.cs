@@ -55,37 +55,71 @@ namespace Converter.Parsing
                 var row = sh.GetRow(r);
                 if (row == null) continue;
 
-                string org        = Read(row, idxOrg);
-                string dep        = Read(row, idxDep);
-                string name       = Read(row, idxName);
-                string position   = Read(row, idxPos);
-                string email      = Read(row, idxEmail);
+                string org        = CleanTrailingLiteralNewlines(Read(row, idxOrg));
+                string dep        = CleanTrailingLiteralNewlines(Read(row, idxDep));
+                string name       = CleanTrailingLiteralNewlines(Read(row, idxName));
+                string position   = CleanTrailingLiteralNewlines(Read(row, idxPos));
+                string email      = CleanTrailingLiteralNewlines(Read(row, idxEmail));
                 string cityCode   = Read(row, idxCityCode);
                 string cityNumber = Read(row, idxCityNumber);
                 string mobile     = Read(row, idxMobile);
                 string internalNo = Read(row, idxInternal);
 
-                // Собираем локацию
+                // Собираем локацию для поля ORG (организация + подразделение)
                 string location = CombineNonEmpty(org, dep, sep: " / ");
 
                 // Выбираем телефон: приоритет мобильному, иначе городской (код + номер)
                 string phone = ChoosePhone(mobile, cityCode, cityNumber);
 
+                // Добавочный номер: если он есть, и есть основной номер - сохраняем для обработки как ext
+                // Если основного нет, добавочный пойдет в InternalPhone для записи в NOTE
+                string cleanInternal = CleanSpaces(internalNo);
+                
+                // Определяем, является ли внутренний номер добавочным (3-5 цифр)
+                bool isExtension = !string.IsNullOrEmpty(cleanInternal) && 
+                                  cleanInternal.All(char.IsDigit) && 
+                                  cleanInternal.Length >= 3 && 
+                                  cleanInternal.Length <= 5;
+
+                string finalInternalPhone = "";
+                
+                // Если есть основной номер и добавочный - добавочный будет обработан как ext
+                // Если нет основного номера, но есть добавочный - записываем его для NOTE
+                if (isExtension)
+                {
+                    if (string.IsNullOrEmpty(phone))
+                    {
+                        // Нет основного номера - добавочный в NOTE
+                        finalInternalPhone = cleanInternal;
+                    }
+                    // Если есть основной номер, добавочный будет в phone как ext, InternalPhone остается пустым
+                }
+                else if (!string.IsNullOrEmpty(cleanInternal))
+                {
+                    // Это не добавочный (длинный номер) - пытаемся нормализовать
+                    var normalized = RuPhone.NormalizeToE164RU(cleanInternal);
+                    if (!string.IsNullOrEmpty(normalized))
+                    {
+                        finalInternalPhone = normalized;
+                    }
+                }
+
                 // Пустые полностью строки пропускаем
                 if (string.IsNullOrWhiteSpace(name) &&
                     string.IsNullOrWhiteSpace(email) &&
                     string.IsNullOrWhiteSpace(phone) &&
-                    string.IsNullOrWhiteSpace(internalNo))
+                    string.IsNullOrWhiteSpace(finalInternalPhone))
                     continue;
 
                 rows.Add(new NormalizedContactRow
                 {
-                    Location      = location,
+                    Location      = location,  // Теперь это "Организация / Подразделение"
                     Name          = name,
                     Position      = position,
                     Email         = email,
-                    Phone         = phone,
-                    InternalPhone = internalNo
+                    Phone         = !string.IsNullOrEmpty(phone) && isExtension && !string.IsNullOrEmpty(cleanInternal) 
+                                   ? $"{phone};ext={cleanInternal}" : phone,  // Основной номер с добавочным
+                    InternalPhone = finalInternalPhone  // Либо пустой, либо номер для NOTE
                 });
             }
 
@@ -169,6 +203,22 @@ namespace Converter.Parsing
             var x = s.Replace('\u00A0', ' ').Trim();
             while (x.Contains("  ")) x = x.Replace("  ", " ");
             return x;
+        }
+
+        /// <summary>
+        /// Убирает завершающие литералы \n (обратный слэш + n) из строки
+        /// </summary>
+        private static string CleanTrailingLiteralNewlines(string s)
+        {
+            if (string.IsNullOrEmpty(s)) return s;
+            
+            // Убираем завершающие "\n" (как литеральные символы \ и n)
+            while (s.EndsWith("\\n"))
+            {
+                s = s.Substring(0, s.Length - 2);
+            }
+            
+            return s.Trim();
         }
     }
 }
