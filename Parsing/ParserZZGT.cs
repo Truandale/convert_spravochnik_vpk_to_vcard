@@ -151,17 +151,15 @@ namespace Converter.Parsing
 
         private static string ChoosePhone(string mobile, string cityCode, string cityNumber)
         {
-            string m = CleanSpaces(mobile);
-            if (!string.IsNullOrWhiteSpace(m)) return m;
+            // 1) приоритет мобильному
+            var m = RuPhone.NormalizeToE164RU(CleanSpaces(mobile));
+            if (!string.IsNullOrEmpty(m)) return m;
 
-            string cc = CleanSpaces(cityCode);
-            string cn = CleanSpaces(cityNumber);
+            // 2) иначе городской: код + номер -> +7XXXXXXXXXX
+            var city = RuPhone.ComposeCityToE164RU(CleanSpaces(cityCode), CleanSpaces(cityNumber));
+            if (!string.IsNullOrEmpty(city)) return city;
 
-            if (!string.IsNullOrWhiteSpace(cc) && !string.IsNullOrWhiteSpace(cn))
-                return $"{cc} {cn}".Trim();
-
-            // если один из них пуст — вернём то, что есть
-            return (!string.IsNullOrWhiteSpace(cn) ? cn : cc) ?? "";
+            return "";
         }
 
         private static string CleanSpaces(string s)

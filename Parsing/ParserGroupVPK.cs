@@ -174,29 +174,23 @@ namespace Converter.Parsing
             return s.Contains("@") && s.IndexOf('@') > 0 && s.IndexOf('@') < s.Length - 1;
         }
 
-        private static bool LooksLikePhone(string s)
-        {
-            if (string.IsNullOrWhiteSpace(s)) return false;
-            // Если в строке есть цифры, и при удалении всего, кроме цифр/+, там >= 5 символов — похоже на телефон
-            var digits = new string(s.Where(ch => char.IsDigit(ch) || ch == '+').ToArray());
-            return digits.Length >= 5;
-        }
-
         private static string ChoosePhone(string mobile, string cityCode, string cityNumber, string extra)
         {
-            string m  = CleanSpaces(mobile);
-            if (!string.IsNullOrWhiteSpace(m)) return m;
+            // 1) мобильный
+            var m = RuPhone.NormalizeToE164RU(CleanSpaces(mobile));
+            if (!string.IsNullOrEmpty(m)) return m;
 
-            string cc = CleanSpaces(cityCode);
-            string cn = CleanSpaces(cityNumber);
-            if (!string.IsNullOrWhiteSpace(cc) && !string.IsNullOrWhiteSpace(cn))
-                return $"{cc} {cn}".Trim();
-            if (!string.IsNullOrWhiteSpace(cn)) return cn;
-            if (!string.IsNullOrWhiteSpace(cc)) return cc;
+            // 2) городской (код + номер)
+            var city = RuPhone.ComposeCityToE164RU(CleanSpaces(cityCode), CleanSpaces(cityNumber));
+            if (!string.IsNullOrEmpty(city)) return city;
 
-            // Доп. поле: только если это больше похоже на номер, чем на email
-            string ex = CleanSpaces(extra);
-            if (!IsEmail(ex) && LooksLikePhone(ex)) return ex;
+            // 3) "Доп. номер/ e-mail" — берём, только если это больше похоже на номер, и нормализуем к +7
+            var ex = CleanSpaces(extra);
+            if (!IsEmail(ex))
+            {
+                var exNorm = RuPhone.NormalizeToE164RU(ex);
+                if (!string.IsNullOrEmpty(exNorm)) return exNorm;
+            }
 
             return "";
         }
