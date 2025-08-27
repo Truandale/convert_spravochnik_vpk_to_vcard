@@ -11,6 +11,7 @@
   <ItemGroup>
     <PackageReference Include="EPPlus" Version="7.5.2" />
     <PackageReference Include="NPOI" Version="2.7.2" />
+    <PackageReference Include="System.Text.Encoding.CodePages" Version="9.0.8" />
     <PackageReference Include="vCardLib.dll" Version="6.0.0" />
     <PackageReference Include="vCards" Version="1.0.0" />
   </ItemGroup>

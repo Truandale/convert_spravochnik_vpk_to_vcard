@@ -1,0 +1,20 @@
+BEGIN:VCARD
+VERSION:3.0
+FN:Иванов Иван Иванович
+N:Иванов;Иван;Иванович;;
+ORG:ИТ-отдел
+TITLE:Ведущий разработчик
+EMAIL:ivan.ivanov@example.com
+TEL;WORK:+74951234567;ext=123
+END:VCARD
+BEGIN:VCARD
+VERSION:3.0
+FN:Петрова Мария Владимировна
+N:Петрова;Мария;Владимировна;;
+ORG:Отдел кадров
+TITLE:Специалист по кадрам
+EMAIL:maria.petrova@example.com
+EMAIL:hr@example.com
+TEL;CELL:+79165551234
+NOTE:Множественные email адреса
+END:VCARD

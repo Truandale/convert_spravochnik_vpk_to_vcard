@@ -13,20 +13,6 @@ namespace convert_spravochnik_vpk_to_vcard
     public static class VPKConverter
     {
         /// <summary>
-        /// Экранирует специальные символы в значениях vCard согласно RFC 2426
-        /// </summary>
-        static string Esc(string? s)
-        {
-            if (string.IsNullOrEmpty(s)) return "";
-            return s.Replace("\\", "\\\\")  // backslash
-                    .Replace(";", "\\;")    // semicolon
-                    .Replace(",", "\\,")    // comma
-                    .Replace("\r\n", "\\n") // CRLF внутри значения
-                    .Replace("\n", "\\n")   // LF -> \n
-                    .Replace("\r", "");     // одиночный CR убрать
-        }
-
-        /// <summary>
         /// Обрабатывает телефонную строку: нормализует основной номер к E.164,
         /// извлекает добавочные номера и возвращает структурированные данные
         /// </summary>
@@ -97,6 +83,7 @@ namespace convert_spravochnik_vpk_to_vcard
             return code.StartsWith("9") || // 9XX - мобильные
                    new[] { "800", "801", "802", "803", "804", "805", "806", "807", "808", "809" }.Contains(code);
         }
+
         public static void Convert(string excelFilePath, string vCardFilePath)
         {
             string tempPath = Path.Combine(Path.GetTempPath(), "VPK_temp");
@@ -122,163 +109,119 @@ namespace convert_spravochnik_vpk_to_vcard
             var sheet = workbook.GetSheetAt(0);
             var rowCount = sheet.LastRowNum;
 
-            using (var vCardWriter = new StreamWriter(vCardFilePath, false, new UTF8Encoding(false)))
+            var contacts = new List<AppleVCardWriter.Contact>();
+
+            for (int row = 1; row <= rowCount; row++)
             {
-                for (int row = 1; row <= rowCount; row++)
+                var currentRow = sheet.GetRow(row);
+                if (currentRow == null)
                 {
-                    var currentRow = sheet.GetRow(row);
-                    if (currentRow == null)
+                    continue;
+                }
+
+                string location = currentRow.GetCell(1)?.ToString() ?? "";
+                string name = currentRow.GetCell(3)?.ToString() ?? "";
+                string position = currentRow.GetCell(4)?.ToString() ?? "";
+                string email = currentRow.GetCell(5)?.ToString() ?? "";
+                string phone = currentRow.GetCell(6)?.ToString() ?? "";
+                string internalPhone = currentRow.GetCell(7)?.ToString() ?? "";
+
+                // Пропускаем строки с пустыми обязательными полями
+                if (string.IsNullOrEmpty(name) || (string.IsNullOrEmpty(email) && string.IsNullOrEmpty(phone) && string.IsNullOrEmpty(internalPhone)))
+                {
+                    continue;
+                }
+
+                // Обрабатываем телефоны с улучшенной нормализацией
+                var (mainPhone, mainExtension, additionalPhones) = ProcessPhoneString(phone);
+                var (internalPhoneNorm, internalExtension, additionalInternal) = ProcessPhoneString(internalPhone);
+
+                // Удаляем переносы строк из FN и заменяем множественные пробелы на один пробел
+                name = Regex.Replace(name.Replace("\n", " ").Replace("\r", " "), @"\s+", " ");
+
+                // Определяем лучший рабочий номер
+                string workPhone = "";
+                string workExtension = "";
+                string mobilePhone = "";
+                
+                // Если основной телефон мобильный - используем его как мобильный
+                if (!string.IsNullOrEmpty(mainPhone) && IsMobileNumber(mainPhone))
+                {
+                    mobilePhone = mainPhone;
+                    // Если есть внутренний и он не мобильный - как рабочий
+                    if (!string.IsNullOrEmpty(internalPhoneNorm) && !IsMobileNumber(internalPhoneNorm))
                     {
-                        continue;
-                    }
-
-                    string location = currentRow.GetCell(1)?.ToString() ?? "";
-                    string name = currentRow.GetCell(3)?.ToString() ?? "";
-                    string position = currentRow.GetCell(4)?.ToString() ?? "";
-                    string email = currentRow.GetCell(5)?.ToString() ?? "";
-                    string phone = currentRow.GetCell(6)?.ToString() ?? "";
-                    string internalPhone = currentRow.GetCell(7)?.ToString() ?? "";
-
-                    // Пропускаем строки с пустыми обязательными полями
-                    if (string.IsNullOrEmpty(name) || (string.IsNullOrEmpty(email) && string.IsNullOrEmpty(phone) && string.IsNullOrEmpty(internalPhone)))
-                    {
-                        continue;
-                    }
-
-                    // Обрабатываем телефоны с улучшенной нормализацией
-                    var (mainPhone, mainExtension, additionalPhones) = ProcessPhoneString(phone);
-                    var (internalPhoneNorm, internalExtension, additionalInternal) = ProcessPhoneString(internalPhone);
-
-                    // Удаляем переносы строк из FN и заменяем множественные пробелы на один пробел
-                    name = Regex.Replace(name.Replace("\n", " ").Replace("\r", " "), @"\s+", " ");
-
-                    // Определяем лучший рабочий номер
-                    string workPhone = "";
-                    string workExtension = "";
-                    string mobilePhone = "";
-                    
-                    // Если основной телефон мобильный - используем его как мобильный
-                    if (!string.IsNullOrEmpty(mainPhone) && IsMobileNumber(mainPhone))
-                    {
-                        mobilePhone = mainPhone;
-                        // Если есть внутренний и он не мобильный - как рабочий
-                        if (!string.IsNullOrEmpty(internalPhoneNorm) && !IsMobileNumber(internalPhoneNorm))
-                        {
-                            workPhone = internalPhoneNorm;
-                            workExtension = internalExtension;
-                        }
-                    }
-                    else if (!string.IsNullOrEmpty(mainPhone))
-                    {
-                        // Основной не мобильный - используем как рабочий
-                        workPhone = mainPhone;
-                        workExtension = mainExtension;
-                        
-                        // Если внутренний мобильный - используем как мобильный
-                        if (!string.IsNullOrEmpty(internalPhoneNorm) && IsMobileNumber(internalPhoneNorm))
-                        {
-                            mobilePhone = internalPhoneNorm;
-                        }
-                    }
-                    else if (!string.IsNullOrEmpty(internalPhoneNorm))
-                    {
-                        // Есть только внутренний
-                        if (IsMobileNumber(internalPhoneNorm))
-                        {
-                            mobilePhone = internalPhoneNorm;
-                        }
-                        else
-                        {
-                            workPhone = internalPhoneNorm;
-                            workExtension = internalExtension;
-                        }
-                    }
-
-                    // Создаем vCard вручную
-                    var vCard = new List<string>
-                    {
-                        "BEGIN:VCARD",
-                        "VERSION:3.0",
-                        $"FN:{Esc(name)}"
-                    };
-
-                    // ORG оставляем пустым, чтобы не дублировать FN
-                    if (!string.IsNullOrEmpty(location))
-                    {
-                        vCard.Add($"ORG:{Esc(location)}");
-                    }
-
-                    if (!string.IsNullOrEmpty(position))
-                    {
-                        vCard.Add($"TITLE:{Esc(position)}");
-                    }
-
-                    // EMAIL только если не пустой
-                    if (!string.IsNullOrEmpty(email))
-                    {
-                        vCard.Add($"EMAIL;TYPE=INTERNET:{Esc(email)}");
-                    }
-
-                    // Рабочий телефон с добавочным если есть
-                    if (!string.IsNullOrEmpty(workPhone))
-                    {
-                        if (!string.IsNullOrEmpty(workExtension))
-                        {
-                            vCard.Add($"TEL;TYPE=WORK,VOICE;VALUE=uri:tel:{workPhone};ext={workExtension}");
-                        }
-                        else
-                        {
-                            vCard.Add($"TEL;TYPE=WORK,VOICE:{workPhone}");
-                        }
-                    }
-
-                    // Мобильный телефон
-                    if (!string.IsNullOrEmpty(mobilePhone))
-                    {
-                        vCard.Add($"TEL;TYPE=CELL,VOICE:{mobilePhone}");
-                    }
-
-                    // Дополнительные телефоны
-                    foreach (var additionalPhone in additionalPhones)
-                    {
-                        vCard.Add($"TEL;TYPE=VOICE:{additionalPhone}");
-                    }
-
-                    // Дополнительные номера из InternalPhone (обычно добавочные)
-                    foreach (var additionalInternalPhone in additionalInternal)
-                    {
-                        vCard.Add($"TEL;TYPE=VOICE:{additionalInternalPhone}");
-                    }
-
-                    // Адрес - правильный формат vCard 3.0 с 7 полями: PO Box;Extended;Street;Locality;Region;PostalCode;Country
-                    if (!string.IsNullOrEmpty(location))
-                    {
-                        // Используем location как Street address (3-е поле)
-                        vCard.Add($"ADR;TYPE=WORK:;;{Esc(location)};;;;");
-                    }
-
-                    // NOTE для добавочных номеров без основного номера
-                    if (!string.IsNullOrEmpty(internalPhoneNorm) && string.IsNullOrEmpty(workPhone) && string.IsNullOrEmpty(mobilePhone))
-                    {
-                        // Проверяем, является ли это коротким добавочным
-                        if (internalPhoneNorm.All(char.IsDigit) && internalPhoneNorm.Length >= 3 && internalPhoneNorm.Length <= 5)
-                        {
-                            vCard.Add($"NOTE:Добавочный номер: {internalPhoneNorm}");
-                        }
-                        else
-                        {
-                            vCard.Add($"TEL;TYPE=WORK,VOICE:{internalPhoneNorm}");
-                        }
-                    }
-
-                    vCard.Add("END:VCARD");
-
-                    foreach (var line in vCard)
-                    {
-                        vCardWriter.WriteLine(line);
+                        workPhone = internalPhoneNorm;
+                        workExtension = internalExtension;
                     }
                 }
+                else if (!string.IsNullOrEmpty(mainPhone))
+                {
+                    // Основной не мобильный - используем как рабочий
+                    workPhone = mainPhone;
+                    workExtension = mainExtension;
+                    
+                    // Если внутренний мобильный - используем как мобильный
+                    if (!string.IsNullOrEmpty(internalPhoneNorm) && IsMobileNumber(internalPhoneNorm))
+                    {
+                        mobilePhone = internalPhoneNorm;
+                    }
+                }
+                else if (!string.IsNullOrEmpty(internalPhoneNorm))
+                {
+                    // Есть только внутренний
+                    if (IsMobileNumber(internalPhoneNorm))
+                    {
+                        mobilePhone = internalPhoneNorm;
+                    }
+                    else
+                    {
+                        workPhone = internalPhoneNorm;
+                        workExtension = internalExtension;
+                    }
+                }
+
+                // Формируем NOTE для добавочных без основного номера
+                string note = "";
+                if (!string.IsNullOrEmpty(internalPhoneNorm) && string.IsNullOrEmpty(workPhone) && string.IsNullOrEmpty(mobilePhone))
+                {
+                    if (internalPhoneNorm.All(char.IsDigit) && internalPhoneNorm.Length >= 3 && internalPhoneNorm.Length <= 5)
+                    {
+                        note = $"Добавочный номер: {internalPhoneNorm}";
+                    }
+                }
+
+                contacts.Add(new AppleVCardWriter.Contact
+                {
+                    FullName = name,
+                    OrgOrDept = location, // Используем location как организацию
+                    Title = position,
+                    Email = email,
+                    MobileE164 = mobilePhone,
+                    WorkE164 = workPhone,
+                    Ext = workExtension,
+                    Note = note
+                });
+
+                // Добавляем дополнительные контакты для дополнительных телефонов
+                foreach (var additionalPhone in additionalPhones)
+                {
+                    contacts.Add(new AppleVCardWriter.Contact
+                    {
+                        FullName = $"{name} (доп.)",
+                        OrgOrDept = location,
+                        Title = position,
+                        Email = "",
+                        MobileE164 = IsMobileNumber(additionalPhone) ? additionalPhone : "",
+                        WorkE164 = !IsMobileNumber(additionalPhone) ? additionalPhone : "",
+                        Ext = "",
+                        Note = "Дополнительный номер"
+                    });
+                }
             }
+
+            // Записываем Apple-совместимый vCard файл
+            AppleVCardWriter.WriteVCardFile(vCardFilePath, contacts);
 
             // Удаляем временный файл
             File.Delete(tempFileName);
