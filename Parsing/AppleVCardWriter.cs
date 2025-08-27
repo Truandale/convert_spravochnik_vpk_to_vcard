@@ -103,35 +103,45 @@ namespace Converter.Parsing
                 w.WriteLine($"TITLE:{Esc(c.Title)}");
             }
 
-            // EMAIL - разбиваем на отдельные строки
+            // EMAIL - разбиваем на отдельные строки (с качественной проверкой)
             foreach (var emailAddr in SplitEmails(c.Email))
             {
-                w.WriteLine($"EMAIL;TYPE=INTERNET:{Esc(emailAddr)}");
+                if (IsValidEmail(emailAddr))
+                {
+                    w.WriteLine($"EMAIL;TYPE=INTERNET:{Esc(emailAddr)}");
+                }
             }
 
-            // Мобильный телефон (умное определение типа + жёсткая нормализация)
+            // Мобильный телефон (качественная проверка + умное определение типа)
             if (!string.IsNullOrWhiteSpace(c.MobileE164))
             {
                 var strictPhone = RuPhone.StrictE164RU(c.MobileE164);
-                if (!string.IsNullOrEmpty(strictPhone))
+                if (!string.IsNullOrEmpty(strictPhone) && IsValidE164Phone(strictPhone))
                 {
-                    // Если номер начинается с +79xx - это действительно мобильный (CELL)
-                    // Иначе это городской номер, помеченный как мобильный (WORK)
-                    var phoneType = strictPhone.StartsWith("+79") ? "CELL" : "WORK";
+                    var phoneType = GetCorrectPhoneType(strictPhone);
                     w.WriteLine($"TEL;TYPE={phoneType},VOICE:{strictPhone}");
                 }
             }
 
-            // Рабочий телефон с добавочным (жёсткая нормализация)
+            // Рабочий телефон с добавочным (качественная проверка)
             if (!string.IsNullOrWhiteSpace(c.WorkE164))
             {
                 var strictWork = RuPhone.StrictE164RU(c.WorkE164);
-                if (!string.IsNullOrEmpty(strictWork))
+                if (!string.IsNullOrEmpty(strictWork) && IsValidE164Phone(strictWork))
                 {
                     if (!string.IsNullOrWhiteSpace(c.Ext))
                     {
-                        // RFC 3966 формат для добавочного номера (лучше для парсинга)
-                        w.WriteLine($"TEL;TYPE=WORK,VOICE;VALUE=uri:tel:{strictWork};ext={c.Ext}");
+                        // RFC 3966 формат для добавочного номера (с валидацией)
+                        var telUri = $"tel:{strictWork};ext={c.Ext}";
+                        if (IsValidE164Phone(telUri))
+                        {
+                            w.WriteLine($"TEL;TYPE=WORK,VOICE;VALUE=uri:{telUri}");
+                        }
+                        else
+                        {
+                            // Fallback: пишем основной номер без добавочного
+                            w.WriteLine($"TEL;TYPE=WORK,VOICE:{strictWork}");
+                        }
                     }
                     else
                     {
@@ -239,18 +249,19 @@ namespace Converter.Parsing
             
             foreach (var note in notesList)
             {
-                // Ищем добавочные номера
-                if (note.Contains("Внутренний номер:"))
+                // Ищем добавочные номера (более гибкий regex)
+                var extMatches = System.Text.RegularExpressions.Regex.Matches(note, @"Внутренний номер:\s*(\d+)");
+                if (extMatches.Count > 0)
                 {
-                    var extMatch = System.Text.RegularExpressions.Regex.Match(note, @"Внутренний номер:\s*(\d+)");
-                    if (extMatch.Success)
+                    foreach (System.Text.RegularExpressions.Match match in extMatches)
                     {
-                        extensions.Add(extMatch.Groups[1].Value);
+                        extensions.Add(match.Groups[1].Value);
                     }
-                    else
-                    {
-                        otherNotes.Add(note); // Не смогли извлечь номер, оставляем как есть
-                    }
+                }
+                else if (note.Contains("Внутренний"))
+                {
+                    // Если содержит "Внутренний" но не смогли распарсить - оставляем как есть
+                    otherNotes.Add(note);
                 }
                 else
                 {
@@ -263,7 +274,7 @@ namespace Converter.Parsing
             // Объединяем добавочные в одну строку
             if (extensions.Any())
             {
-                var uniqueExts = extensions.Distinct().ToList();
+                var uniqueExts = extensions.Distinct().OrderBy(x => int.TryParse(x, out var num) ? num : 0).ToList();
                 if (uniqueExts.Count == 1)
                     result.Add($"Внутренний номер: {uniqueExts[0]}");
                 else
@@ -274,6 +285,49 @@ namespace Converter.Parsing
             result.AddRange(otherNotes.Distinct());
             
             return string.Join(" | ", result);
+        }
+        
+        /// <summary>
+        /// Quality Gate: Проверяет корректность телефона перед записью в vCard
+        /// </summary>
+        private static bool IsValidE164Phone(string phone)
+        {
+            if (string.IsNullOrWhiteSpace(phone)) return false;
+            
+            // Обычный E.164: +7 + ровно 10 цифр
+            if (System.Text.RegularExpressions.Regex.IsMatch(phone, @"^\+7\d{10}$"))
+                return true;
+                
+            // RFC 3966 с добавочным: tel:+7XXXXXXXXXX;ext=XXX
+            if (System.Text.RegularExpressions.Regex.IsMatch(phone, @"^tel:\+7\d{10}(;ext=\d+)?$"))
+                return true;
+                
+            return false;
+        }
+        
+        /// <summary>
+        /// Quality Gate: Определяет правильный тип телефона
+        /// </summary>
+        private static string GetCorrectPhoneType(string phone)
+        {
+            if (string.IsNullOrWhiteSpace(phone)) return "WORK";
+            
+            // Если начинается с +79xx - это мобильный
+            if (phone.StartsWith("+79")) return "CELL";
+            
+            // Остальные российские номера - рабочие
+            return "WORK";
+        }
+        
+        /// <summary>
+        /// Quality Gate: Проверяет корректность email адреса
+        /// </summary>
+        private static bool IsValidEmail(string email)
+        {
+            if (string.IsNullOrWhiteSpace(email)) return false;
+            
+            // Простая проверка: должен содержать @ и точку
+            return email.Contains("@") && email.Contains(".") && email.Trim().Length > 5;
         }
     }
 }
