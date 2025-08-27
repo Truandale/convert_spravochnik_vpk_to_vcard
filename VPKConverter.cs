@@ -132,64 +132,34 @@ namespace convert_spravochnik_vpk_to_vcard
                     continue;
                 }
 
-                // Обрабатываем телефоны с улучшенной нормализацией
-                var (mainPhone, mainExtension, additionalPhones) = ProcessPhoneString(phone);
-                var (internalPhoneNorm, internalExtension, additionalInternal) = ProcessPhoneString(internalPhone);
+                // Обрабатываем телефоны - ВПК специфика:
+                // phone (столбец 6) - всегда мобильный номер в формате "8 9XX..."
+                // internalPhone (столбец 7) - всегда добавочный номер (3-4 цифры)
+                
+                string mobilePhone = "";
+                string workPhone = "";
+                string workExtension = "";
+                string note = "";
+
+                // Нормализуем мобильный телефон к E.164
+                if (!string.IsNullOrWhiteSpace(phone))
+                {
+                    mobilePhone = RuPhone.NormalizeToE164RU(phone);
+                }
+
+                // Обрабатываем добавочный номер
+                if (!string.IsNullOrWhiteSpace(internalPhone))
+                {
+                    var ext = new string(internalPhone.Where(char.IsDigit).ToArray());
+                    if (!string.IsNullOrEmpty(ext) && ext.Length >= 3 && ext.Length <= 5)
+                    {
+                        // Добавочный номер идет в NOTE, так как у ВПК нет городского номера
+                        note = $"Внутренний номер: {ext}";
+                    }
+                }
 
                 // Удаляем переносы строк из FN и заменяем множественные пробелы на один пробел
                 name = Regex.Replace(name.Replace("\n", " ").Replace("\r", " "), @"\s+", " ");
-
-                // Определяем лучший рабочий номер
-                string workPhone = "";
-                string workExtension = "";
-                string mobilePhone = "";
-                
-                // Если основной телефон мобильный - используем его как мобильный
-                if (!string.IsNullOrEmpty(mainPhone) && IsMobileNumber(mainPhone))
-                {
-                    mobilePhone = mainPhone;
-                    // Если есть внутренний и он не мобильный - как рабочий
-                    if (!string.IsNullOrEmpty(internalPhoneNorm) && !IsMobileNumber(internalPhoneNorm))
-                    {
-                        workPhone = internalPhoneNorm;
-                        workExtension = internalExtension;
-                    }
-                }
-                else if (!string.IsNullOrEmpty(mainPhone))
-                {
-                    // Основной не мобильный - используем как рабочий
-                    workPhone = mainPhone;
-                    workExtension = mainExtension;
-                    
-                    // Если внутренний мобильный - используем как мобильный
-                    if (!string.IsNullOrEmpty(internalPhoneNorm) && IsMobileNumber(internalPhoneNorm))
-                    {
-                        mobilePhone = internalPhoneNorm;
-                    }
-                }
-                else if (!string.IsNullOrEmpty(internalPhoneNorm))
-                {
-                    // Есть только внутренний
-                    if (IsMobileNumber(internalPhoneNorm))
-                    {
-                        mobilePhone = internalPhoneNorm;
-                    }
-                    else
-                    {
-                        workPhone = internalPhoneNorm;
-                        workExtension = internalExtension;
-                    }
-                }
-
-                // Формируем NOTE для добавочных без основного номера
-                string note = "";
-                if (!string.IsNullOrEmpty(internalPhoneNorm) && string.IsNullOrEmpty(workPhone) && string.IsNullOrEmpty(mobilePhone))
-                {
-                    if (internalPhoneNorm.All(char.IsDigit) && internalPhoneNorm.Length >= 3 && internalPhoneNorm.Length <= 5)
-                    {
-                        note = $"Добавочный номер: {internalPhoneNorm}";
-                    }
-                }
 
                 contacts.Add(new AppleVCardWriter.Contact
                 {
@@ -197,27 +167,11 @@ namespace convert_spravochnik_vpk_to_vcard
                     OrgOrDept = location, // Используем location как организацию
                     Title = position,
                     Email = email,
-                    MobileE164 = mobilePhone,
-                    WorkE164 = workPhone,
-                    Ext = workExtension,
-                    Note = note
+                    MobileE164 = mobilePhone,     // Мобильный в правильное поле
+                    WorkE164 = workPhone,         // Рабочий (пока пустой для ВПК)
+                    Ext = workExtension,          // Добавочный к рабочему (пока пустой)
+                    Note = note                   // Добавочный номер в заметки
                 });
-
-                // Добавляем дополнительные контакты для дополнительных телефонов
-                foreach (var additionalPhone in additionalPhones)
-                {
-                    contacts.Add(new AppleVCardWriter.Contact
-                    {
-                        FullName = $"{name} (доп.)",
-                        OrgOrDept = location,
-                        Title = position,
-                        Email = "",
-                        MobileE164 = IsMobileNumber(additionalPhone) ? additionalPhone : "",
-                        WorkE164 = !IsMobileNumber(additionalPhone) ? additionalPhone : "",
-                        Ext = "",
-                        Note = "Дополнительный номер"
-                    });
-                }
             }
 
             // Записываем Apple-совместимый vCard файл
