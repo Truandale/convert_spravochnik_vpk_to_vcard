@@ -109,10 +109,13 @@ namespace Converter.Parsing
                 w.WriteLine($"EMAIL;TYPE=INTERNET:{Esc(emailAddr)}");
             }
 
-            // Мобильный телефон
+            // Мобильный телефон (умное определение типа)
             if (!string.IsNullOrWhiteSpace(c.MobileE164))
             {
-                w.WriteLine($"TEL;TYPE=CELL,VOICE:{c.MobileE164}");
+                // Если номер начинается с +79xx - это действительно мобильный (CELL)
+                // Иначе это городской номер, помеченный как мобильный (WORK)
+                var phoneType = c.MobileE164.StartsWith("+79") ? "CELL" : "WORK";
+                w.WriteLine($"TEL;TYPE={phoneType},VOICE:{c.MobileE164}");
             }
 
             // Рабочий телефон с добавочным

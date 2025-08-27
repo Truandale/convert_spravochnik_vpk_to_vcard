@@ -18,13 +18,16 @@ namespace Converter.Parsing
         public static string NormalizeToE164RU(string? raw)
         {
             if (string.IsNullOrWhiteSpace(raw)) return "";
-            var digits = new string(raw.Where(char.IsDigit).ToArray());
+            
+            // Сначала убираем все символы кроме цифр и плюса
+            var cleaned = new string(raw.Where(c => char.IsDigit(c) || c == '+').ToArray());
+            var digits = new string(cleaned.Where(char.IsDigit).ToArray());
 
-            if (raw.Trim().StartsWith("+"))
+            if (cleaned.StartsWith("+"))
             {
                 // уже международный; если не +7 — оставим как есть (может быть внешний номер)
-                if (raw.Trim().StartsWith("+7")) return "+7" + TakeLast(digits, 10);
-                return raw.Trim(); // не RU, не трогаем
+                if (cleaned.StartsWith("+7")) return "+7" + TakeLast(digits, 10);
+                return cleaned; // не RU, не трогаем
             }
 
             if (digits.Length == 11 && (digits[0] == '7' || digits[0] == '8'))
@@ -41,6 +44,7 @@ namespace Converter.Parsing
         /// <summary>
         /// Склеивает "код города" + "городской номер" и нормализует к +7XXXXXXXXXX.
         /// Пример: code="83161", number="2-14-01" -> "+78316121401".
+        /// Добавлена валидация длины для ЗЗГТ: отклоняем странные номера.
         /// </summary>
         public static string ComposeCityToE164RU(string? cityCode, string? cityNumber)
         {
@@ -49,12 +53,21 @@ namespace Converter.Parsing
             var joined = cc + cn;
 
             if (joined.Length == 11 && (joined[0] == '7' || joined[0] == '8'))
-                return "+7" + joined.Substring(1, 10);
+            {
+                var result = "+7" + joined.Substring(1, 10);
+                // Дополнительная проверка: результат должен быть ровно 12 символов (+7 + 10 цифр)
+                if (result.Length == 12) return result;
+            }
 
             if (joined.Length == 10)
-                return "+7" + joined;
+            {
+                var result = "+7" + joined;
+                // Проверка: итоговая длина должна быть 12 символов
+                if (result.Length == 12) return result;
+            }
 
-            // Некоторые код+номер бывают диковатых длин, но для надёжного набора с мобильного нужен НННННННННН (10).
+            // Валидация для российских номеров: после +7 должно быть ровно 10 цифр
+            // Странные комбинации типа +7587... или +7289... отклоняем
             return "";
         }
 

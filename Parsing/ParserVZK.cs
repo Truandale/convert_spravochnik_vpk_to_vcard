@@ -230,6 +230,8 @@ namespace Converter.Parsing
             result = result.Replace("Отел", "Отдел");
             result = result.Replace("иремонта", "и ремонта");
             result = result.Replace("обслуживания иремонта", "обслуживания и ремонта");
+            result = result.Replace("макетинга", "маркетинга");
+            result = result.Replace("Макетинга", "Маркетинга");
             
             return result;
         }

@@ -220,6 +220,9 @@ namespace Converter.Parsing
             // Исправляем типичные склейки (эвристика)
             result = System.Text.RegularExpressions.Regex.Replace(result, @"([а-яё])([А-ЯЁ])", "$1 $2");
             
+            // Исправляем типичные опечатки в ВИЦ  
+            result = result.Replace("Финансово- экономический", "Финансово-экономический");
+            
             return result;
         }
 
