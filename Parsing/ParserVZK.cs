@@ -233,6 +233,9 @@ namespace Converter.Parsing
             result = result.Replace("макетинга", "маркетинга");
             result = result.Replace("Макетинга", "Маркетинга");
             
+            // Косметика: убираем лишние пробелы вокруг дефисов
+            result = System.Text.RegularExpressions.Regex.Replace(result, @"\s*-\s*", "-");
+            
             return result;
         }
 

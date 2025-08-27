@@ -223,6 +223,9 @@ namespace Converter.Parsing
             // Исправляем типичные опечатки в ВИЦ  
             result = result.Replace("Финансово- экономический", "Финансово-экономический");
             
+            // Косметика: убираем лишние пробелы вокруг дефисов
+            result = System.Text.RegularExpressions.Regex.Replace(result, @"\s*-\s*", "-");
+            
             return result;
         }
 

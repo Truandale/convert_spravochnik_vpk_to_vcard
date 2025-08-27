@@ -73,5 +73,24 @@ namespace Converter.Parsing
 
         private static string TakeLast(string s, int n) =>
             s.Length <= n ? s : s.Substring(s.Length - n, n);
+
+        /// <summary>
+        /// Жёсткая нормализация для финального vCard: убирает ВСЁ кроме +7 и 10 цифр.
+        /// Результат строго +7XXXXXXXXXX или пустая строка.
+        /// Использовать перед записью TEL для гарантии качества.
+        /// </summary>
+        public static string StrictE164RU(string? raw)
+        {
+            if (string.IsNullOrWhiteSpace(raw)) return "";
+            
+            // Убираем всё кроме цифр и плюса
+            var cleaned = new string(raw.Where(c => char.IsDigit(c) || c == '+').ToArray());
+            
+            // Проверяем финальный паттерн: +7 + ровно 10 цифр
+            if (System.Text.RegularExpressions.Regex.IsMatch(cleaned, @"^\+7\d{10}$"))
+                return cleaned;
+                
+            return "";
+        }
     }
 }

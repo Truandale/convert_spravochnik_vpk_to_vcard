@@ -109,26 +109,34 @@ namespace Converter.Parsing
                 w.WriteLine($"EMAIL;TYPE=INTERNET:{Esc(emailAddr)}");
             }
 
-            // Мобильный телефон (умное определение типа)
+            // Мобильный телефон (умное определение типа + жёсткая нормализация)
             if (!string.IsNullOrWhiteSpace(c.MobileE164))
             {
-                // Если номер начинается с +79xx - это действительно мобильный (CELL)
-                // Иначе это городской номер, помеченный как мобильный (WORK)
-                var phoneType = c.MobileE164.StartsWith("+79") ? "CELL" : "WORK";
-                w.WriteLine($"TEL;TYPE={phoneType},VOICE:{c.MobileE164}");
+                var strictPhone = RuPhone.StrictE164RU(c.MobileE164);
+                if (!string.IsNullOrEmpty(strictPhone))
+                {
+                    // Если номер начинается с +79xx - это действительно мобильный (CELL)
+                    // Иначе это городской номер, помеченный как мобильный (WORK)
+                    var phoneType = strictPhone.StartsWith("+79") ? "CELL" : "WORK";
+                    w.WriteLine($"TEL;TYPE={phoneType},VOICE:{strictPhone}");
+                }
             }
 
-            // Рабочий телефон с добавочным
+            // Рабочий телефон с добавочным (жёсткая нормализация)
             if (!string.IsNullOrWhiteSpace(c.WorkE164))
             {
-                if (!string.IsNullOrWhiteSpace(c.Ext))
+                var strictWork = RuPhone.StrictE164RU(c.WorkE164);
+                if (!string.IsNullOrEmpty(strictWork))
                 {
-                    // RFC 3966 формат для добавочного номера (лучше для парсинга)
-                    w.WriteLine($"TEL;TYPE=WORK,VOICE;VALUE=uri:tel:{c.WorkE164};ext={c.Ext}");
-                }
-                else
-                {
-                    w.WriteLine($"TEL;TYPE=WORK,VOICE:{c.WorkE164}");
+                    if (!string.IsNullOrWhiteSpace(c.Ext))
+                    {
+                        // RFC 3966 формат для добавочного номера (лучше для парсинга)
+                        w.WriteLine($"TEL;TYPE=WORK,VOICE;VALUE=uri:tel:{strictWork};ext={c.Ext}");
+                    }
+                    else
+                    {
+                        w.WriteLine($"TEL;TYPE=WORK,VOICE:{strictWork}");
+                    }
                 }
             }
             else if (!string.IsNullOrWhiteSpace(c.Ext))
@@ -155,17 +163,67 @@ namespace Converter.Parsing
         }
 
         /// <summary>
-        /// Создает Apple-совместимый vCard файл
+        /// Создает Apple-совместимый vCard файл с объединением дублей
         /// </summary>
         public static void WriteVCardFile(string filePath, IEnumerable<Contact> contacts)
         {
+            // Объединяем дубли по ФИО перед записью
+            var mergedContacts = MergeDuplicates(contacts);
+            
             using var w = new StreamWriter(filePath, false, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
             w.NewLine = "\r\n"; // CRLF для максимальной совместимости с Apple/iOS
             
-            foreach (var contact in contacts)
+            foreach (var contact in mergedContacts)
             {
                 WriteContact(w, contact);
             }
+        }
+        
+        /// <summary>
+        /// Объединяет дубли контактов по одинаковому ФИО
+        /// Склеивает email'ы, заметки; оставляет первый телефон
+        /// </summary>
+        private static List<Contact> MergeDuplicates(IEnumerable<Contact> contacts)
+        {
+            var grouped = contacts
+                .Where(c => !string.IsNullOrWhiteSpace(c.FullName))
+                .GroupBy(c => c.FullName.Trim().ToLowerInvariant())
+                .ToList();
+                
+            var result = new List<Contact>();
+            
+            foreach (var group in grouped)
+            {
+                if (group.Count() == 1)
+                {
+                    result.Add(group.First());
+                }
+                else
+                {
+                    // Объединяем дубли
+                    var first = group.First();
+                    var merged = new Contact
+                    {
+                        FullName = first.FullName,
+                        OrgOrDept = first.OrgOrDept,
+                        Title = CombineNonEmpty(group.Select(c => c.Title), " / "),
+                        Email = CombineNonEmpty(group.Select(c => c.Email).Where(e => !string.IsNullOrWhiteSpace(e)), ", "),
+                        MobileE164 = first.MobileE164, // Первый телефон
+                        WorkE164 = first.WorkE164,
+                        Ext = first.Ext,
+                        Note = CombineNonEmpty(group.Select(c => c.Note), " | ")
+                    };
+                    result.Add(merged);
+                }
+            }
+            
+            return result;
+        }
+        
+        private static string CombineNonEmpty(IEnumerable<string> values, string separator)
+        {
+            var nonEmpty = values.Where(v => !string.IsNullOrWhiteSpace(v)).Distinct();
+            return string.Join(separator, nonEmpty);
         }
     }
 }
