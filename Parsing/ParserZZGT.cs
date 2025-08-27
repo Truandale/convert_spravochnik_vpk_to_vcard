@@ -189,11 +189,44 @@ namespace Converter.Parsing
             var m = RuPhone.NormalizeToE164RU(CleanSpaces(mobile));
             if (!string.IsNullOrEmpty(m)) return m;
 
-            // 2) иначе городской: код + номер -> +7XXXXXXXXXX
-            var city = RuPhone.ComposeCityToE164RU(CleanSpaces(cityCode), CleanSpaces(cityNumber));
+            // 2) городской с валидацией склейки (специально для ЗЗГТ)
+            var city = ComposeCityWithValidation(CleanSpaces(cityCode), CleanSpaces(cityNumber));
             if (!string.IsNullOrEmpty(city)) return city;
 
             return "";
+        }
+
+        /// <summary>
+        /// Строгая валидация склейки городского номера для ЗЗГТ
+        /// Проверяет что код+номер дают корректную российскую нумерацию
+        /// </summary>
+        private static string ComposeCityWithValidation(string cityCode, string cityNumber)
+        {
+            if (string.IsNullOrWhiteSpace(cityCode) || string.IsNullOrWhiteSpace(cityNumber))
+                return "";
+
+            var cc = new string(cityCode.Where(char.IsDigit).ToArray());
+            var cn = new string(cityNumber.Where(char.IsDigit).ToArray());
+            var joined = cc + cn;
+
+            // Валидация: должно быть 9-10 цифр для нормальной российской нумерации
+            if (joined.Length < 9 || joined.Length > 10)
+            {
+                // Логируем аномалию для отладки
+                System.Diagnostics.Debug.WriteLine($"ЗЗГТ: Странная длина городского номера: код='{cityCode}' номер='{cityNumber}' -> {joined.Length} цифр");
+                return "";
+            }
+
+            var result = "+7" + joined;
+            
+            // Финальная проверка: результат должен быть +7 + ровно 10 цифр (итого 12 символов)
+            if (result.Length != 12)
+            {
+                System.Diagnostics.Debug.WriteLine($"ЗЗГТ: Некорректная финальная длина: {result} ({result.Length} символов)");
+                return "";
+            }
+
+            return result;
         }
 
         private static string CleanSpaces(string s)

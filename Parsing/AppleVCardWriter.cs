@@ -211,7 +211,7 @@ namespace Converter.Parsing
                         MobileE164 = first.MobileE164, // Первый телефон
                         WorkE164 = first.WorkE164,
                         Ext = first.Ext,
-                        Note = CombineNonEmpty(group.Select(c => c.Note), " | ")
+                        Note = CombineNotesNicely(group.Select(c => c.Note))
                     };
                     result.Add(merged);
                 }
@@ -224,6 +224,56 @@ namespace Converter.Parsing
         {
             var nonEmpty = values.Where(v => !string.IsNullOrWhiteSpace(v)).Distinct();
             return string.Join(separator, nonEmpty);
+        }
+        
+        /// <summary>
+        /// Умное объединение заметок: выделяет добавочные номера и объединяет их красиво
+        /// </summary>
+        private static string CombineNotesNicely(IEnumerable<string> notes)
+        {
+            var notesList = notes.Where(n => !string.IsNullOrWhiteSpace(n)).ToList();
+            if (!notesList.Any()) return "";
+            
+            var extensions = new List<string>();
+            var otherNotes = new List<string>();
+            
+            foreach (var note in notesList)
+            {
+                // Ищем добавочные номера
+                if (note.Contains("Внутренний номер:"))
+                {
+                    var extMatch = System.Text.RegularExpressions.Regex.Match(note, @"Внутренний номер:\s*(\d+)");
+                    if (extMatch.Success)
+                    {
+                        extensions.Add(extMatch.Groups[1].Value);
+                    }
+                    else
+                    {
+                        otherNotes.Add(note); // Не смогли извлечь номер, оставляем как есть
+                    }
+                }
+                else
+                {
+                    otherNotes.Add(note);
+                }
+            }
+            
+            var result = new List<string>();
+            
+            // Объединяем добавочные в одну строку
+            if (extensions.Any())
+            {
+                var uniqueExts = extensions.Distinct().ToList();
+                if (uniqueExts.Count == 1)
+                    result.Add($"Внутренний номер: {uniqueExts[0]}");
+                else
+                    result.Add($"Внутренние номера: {string.Join(", ", uniqueExts)}");
+            }
+            
+            // Добавляем остальные заметки
+            result.AddRange(otherNotes.Distinct());
+            
+            return string.Join(" | ", result);
         }
     }
 }
