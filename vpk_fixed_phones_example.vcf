@@ -1,0 +1,20 @@
+BEGIN:VCARD
+VERSION:3.0
+FN:Васютин Сергей Владимирович
+N:Васютин;Сергей;Владимирович;;
+ORG:ВПК Москва
+TITLE:Инженер
+EMAIL:sergey.vasyutin@vpk.com
+TEL;TYPE=CELL,VOICE:+79158887766
+NOTE:Внутренний номер: 2447
+END:VCARD
+BEGIN:VCARD
+VERSION:3.0
+FN:Перезолов Сергей Николаевич
+N:Перезолов;Сергей;Николаевич;;
+ORG:ВПК Москва
+TITLE:Главный специалист
+EMAIL:sergey.perezolov@vpk.com
+TEL;TYPE=CELL,VOICE:+79169994433
+NOTE:Внутренний номер: 2488
+END:VCARD

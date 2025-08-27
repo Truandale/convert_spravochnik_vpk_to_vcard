@@ -90,8 +90,14 @@ namespace Converter.Parsing
                 {
                     if (!string.IsNullOrEmpty(phone))
                     {
-                        // Есть основной номер - добавляем extension
-                        phone = $"{phone};ext={cleanInternal}";
+                        // Есть основной номер - добавляем extension в правильном RFC 3966 формате
+                        // Очищаем основной номер от скобок и пробелов перед ext
+                        string cleanPhone = RuPhone.NormalizeToE164RU(phone);
+                        if (!string.IsNullOrEmpty(cleanPhone))
+                        {
+                            phone = cleanPhone; // Используем нормализованный номер без ext
+                            finalInternalPhone = cleanInternal; // Добавочный пойдет в NOTE или как ext в AppleVCardWriter
+                        }
                     }
                     else
                     {
@@ -109,9 +115,12 @@ namespace Converter.Parsing
                     }
                 }
 
+                // Объединяем все email адреса в одну строку через точку с запятой
+                var allEmails = string.Join("; ", emails);
+
                 // Пустые полностью строки не тянем
                 if (string.IsNullOrWhiteSpace(name) &&
-                    string.IsNullOrWhiteSpace(primaryEmail) &&
+                    string.IsNullOrWhiteSpace(allEmails) &&
                     string.IsNullOrWhiteSpace(phone) &&
                     string.IsNullOrWhiteSpace(finalInternalPhone))
                     continue;
@@ -121,26 +130,12 @@ namespace Converter.Parsing
                     Location      = organization,  // Теперь это правильная организация для ORG
                     Name          = name,
                     Position      = position,
-                    Email         = primaryEmail,  // Первый email
+                    Email         = allEmails,  // Все email объединены через точку с запятой
                     Phone         = phone,
                     InternalPhone = finalInternalPhone
                 };
 
                 rows.Add(contactRow);
-
-                // Добавляем дополнительные записи для остальных email адресов
-                for (int i = 1; i < emails.Count; i++)
-                {
-                    rows.Add(new NormalizedContactRow
-                    {
-                        Location      = organization,
-                        Name          = name + $" (email {i + 1})",  // Отличающееся имя для дубликата
-                        Position      = position,
-                        Email         = emails[i],
-                        Phone         = "",  // Только email, телефоны не дублируем
-                        InternalPhone = ""
-                    });
-                }
             }
 
             return VpkNormalizedWorkbookBuilder.BuildTempWorkbook(rows, "VZK_");
@@ -208,7 +203,7 @@ namespace Converter.Parsing
         }
 
         /// <summary>
-        /// Улучшенная очистка текста: убирает двойные пробелы, исправляет склейки
+        /// Улучшенная очистка текста: убирает двойные пробелы, исправляет склейки и типичные опечатки
         /// </summary>
         private static string CleanTextQuality(string s)
         {
@@ -225,6 +220,16 @@ namespace Converter.Parsing
             
             // Исправляем типичные склейки (эвристика)
             result = System.Text.RegularExpressions.Regex.Replace(result, @"([а-яё])([А-ЯЁ])", "$1 $2");
+            
+            // Исправляем типичные опечатки в ВЗК
+            result = result.Replace("режмно-секретный", "режимно-секретный");
+            result = result.Replace("Режмно-секретный", "Режимно-секретный");
+            result = result.Replace("режмно-секретного", "режимно-секретного");
+            result = result.Replace("Режмно-секретного", "Режимно-секретного");
+            result = result.Replace("отел", "отдел");
+            result = result.Replace("Отел", "Отдел");
+            result = result.Replace("иремонта", "и ремонта");
+            result = result.Replace("обслуживания иремонта", "обслуживания и ремонта");
             
             return result;
         }

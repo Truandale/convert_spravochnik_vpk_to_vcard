@@ -120,12 +120,25 @@ namespace Converter.Parsing
             {
                 if (!string.IsNullOrWhiteSpace(c.Ext))
                 {
-                    // Apple-дружелюбный формат: запятая = пауза
-                    w.WriteLine($"TEL;TYPE=WORK,VOICE:{c.WorkE164},,{c.Ext}");
+                    // RFC 3966 формат для добавочного номера (лучше для парсинга)
+                    w.WriteLine($"TEL;TYPE=WORK,VOICE;VALUE=uri:tel:{c.WorkE164};ext={c.Ext}");
                 }
                 else
                 {
                     w.WriteLine($"TEL;TYPE=WORK,VOICE:{c.WorkE164}");
+                }
+            }
+            else if (!string.IsNullOrWhiteSpace(c.Ext))
+            {
+                // Есть только добавочный номер без основного - выносим в NOTE
+                var extNote = $"Внутренний номер: {c.Ext}";
+                if (!string.IsNullOrWhiteSpace(c.Note))
+                {
+                    c.Note = $"{c.Note}; {extNote}";
+                }
+                else
+                {
+                    c.Note = extNote;
                 }
             }
 
