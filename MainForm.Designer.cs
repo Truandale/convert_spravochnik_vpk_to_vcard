@@ -62,7 +62,7 @@ namespace convert_spravochnik_vpk_to_vcard
             this.btnGroupVPK.Name = "btnGroupVPK";
             this.btnGroupVPK.Size = new System.Drawing.Size(150, 40);
             this.btnGroupVPK.TabIndex = 2;
-            this.btnGroupVPK.Text = "Группа ВПК";
+            this.btnGroupVPK.Text = "ВИЦ";
             this.btnGroupVPK.UseVisualStyleBackColor = true;
             this.btnGroupVPK.Click += new System.EventHandler(this.BtnGroupVPK_Click);
             // 

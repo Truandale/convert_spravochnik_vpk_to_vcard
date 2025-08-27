@@ -6,14 +6,14 @@ using NPOI.SS.UserModel;
 namespace Converter.Parsing
 {
     /// <summary>
-    /// Парсер для кнопки «Группа ВПК».
+    /// Парсер для кнопки «ВИЦ».
     /// Обходит все листы книги, читает шапку, нормализует строки под формат VPK
     /// (колонки Location, Name, Position, Email, Phone, InternalPhone),
     /// затем пишет временный .xlsx и отдаёт путь для VPKConverter.Convert(...).
     /// </summary>
     public sealed class ParserGroupVPK : IExcelParser
     {
-        public string Name => "Группа ВПК";
+        public string Name => "ВИЦ";
 
         // Варианты заголовков (расширяем при необходимости)
         private static readonly string[] H_Org        = { "организация" };
