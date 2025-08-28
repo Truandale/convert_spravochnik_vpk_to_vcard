@@ -32,6 +32,13 @@ namespace convert_spravochnik_vpk_to_vcard
                 return;
             }
             
+            // Если передан аргумент --test-all, запускаем тесты всех парсеров
+            if (args.Length > 0 && args[0] == "--test-all")
+            {
+                TestVCardOutput.TestAllParsers();
+                return;
+            }
+            
             ApplicationConfiguration.Initialize();
             Application.Run(new MainForm());
         }

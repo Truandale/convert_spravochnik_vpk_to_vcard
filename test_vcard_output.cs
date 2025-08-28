@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Converter.Parsing;
 
 namespace convert_spravochnik_vpk_to_vcard
@@ -135,6 +136,68 @@ namespace convert_spravochnik_vpk_to_vcard
             {
                 Console.WriteLine($"✗ Ошибка парсинга ЗЗГТ: {ex.Message}");
                 Console.WriteLine($"StackTrace: {ex.StackTrace}");
+            }
+        }
+        
+        public static void TestAllParsers()
+        {
+            Console.WriteLine("=== Тест всех парсеров ===");
+            
+            var tests = new[]
+            {
+                ("ЗЗГТ", @"c:\Users\trubnikovaa\Documents\Справочники\ЗЗГТ.xlsx", (Func<IExcelParser>?)(() => new ParserZZGT())),
+                ("ВИЦ", @"c:\Users\trubnikovaa\Documents\Справочники\ВИЦ.xlsx", (Func<IExcelParser>?)(() => new ParserGroupVPK())),
+                ("ВЗК", @"c:\Users\trubnikovaa\Documents\Справочники\ВЗК.xlsx", (Func<IExcelParser>?)(() => new ParserVZK())),
+                ("ВПК", @"c:\Users\trubnikovaa\Documents\Справочники\ВПК.xlsx", (Func<IExcelParser>?)null) // ВПК используется напрямую
+            };
+            
+            foreach (var (name, file, parserFactory) in tests)
+            {
+                Console.WriteLine($"\n=== Тестируем {name} ===");
+                
+                try
+                {
+                    string outputFile = $@"c:\Users\trubnikovaa\Documents\Справочники\test_{name.ToLower()}.vcf";
+                    
+                    if (parserFactory != null)
+                    {
+                        // Парсеры с промежуточным VPK файлом
+                        var parser = parserFactory();
+                        Console.WriteLine($"Создаем временный VPK файл для {name}...");
+                        string tempVpkFile = parser.CreateVpkCompatibleWorkbook(file);
+                        Console.WriteLine($"Конвертируем {name} в vCard...");
+                        VPKConverterFixed.Convert(tempVpkFile, outputFile);
+                        
+                        // Удаляем временный файл
+                        if (System.IO.File.Exists(tempVpkFile))
+                        {
+                            System.IO.File.Delete(tempVpkFile);
+                        }
+                    }
+                    else
+                    {
+                        // ВПК - прямая конвертация
+                        Console.WriteLine($"Конвертируем {name} напрямую в vCard...");
+                        VPKConverterFixed.Convert(file, outputFile);
+                    }
+                    
+                    // Показываем статистику
+                    var lines = System.IO.File.ReadAllLines(outputFile);
+                    int contactCount = lines.Count(l => l == "BEGIN:VCARD");
+                    Console.WriteLine($"✅ {name}: {contactCount} контактов, {lines.Length} строк");
+                    
+                    // Показываем первый контакт
+                    var firstContact = lines.Take(15).ToArray();
+                    Console.WriteLine("Первый контакт:");
+                    foreach (var line in firstContact)
+                    {
+                        Console.WriteLine($"  {line}");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"❌ {name}: Ошибка - {ex.Message}");
+                }
             }
         }
     }
