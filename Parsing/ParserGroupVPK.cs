@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using NPOI.SS.UserModel;
+using convert_spravochnik_vpk_to_vcard;
 
 namespace Converter.Parsing
 {
@@ -29,14 +30,27 @@ namespace Converter.Parsing
 
         public string CreateVpkCompatibleWorkbook(string sourceExcelPath)
         {
-            using var wb = ExcelUtils.Open(sourceExcelPath);
-
+            using var wb = WorkbookHelper.OpenWorkbook(sourceExcelPath);
+            
+            bool anyValid = false;
             var rows = new List<NormalizedContactRow>();
 
+            // Проверяем все листы книги с железобетонной валидацией
             for (int s = 0; s < wb.NumberOfSheets; s++)
             {
                 var sh = wb.GetSheetAt(s);
-                if (sh == null) continue;
+                var (ok, start, why) = StrictSchemaValidator.ValidateFirstRowExact("ВИЦ", sh);
+                
+                if (!ok) 
+                { 
+                    Console.WriteLine($"[ВИЦ] Пропуск «{sh.SheetName}»: {why}"); 
+                    continue; 
+                }
+
+                anyValid = true;
+                Console.WriteLine($"[ВИЦ] Обрабатываем лист «{sh.SheetName}», начало блока: колонка {start}");
+
+                var idx = StrictSchemaValidator.GetHeaderIndexes("ВИЦ", start);
 
                 // Заголовок — первая строка листа
                 var header = sh.GetRow(sh.FirstRowNum);

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using NPOI.SS.UserModel;
+using convert_spravochnik_vpk_to_vcard;
 
 namespace Converter.Parsing
 {
@@ -27,101 +28,98 @@ namespace Converter.Parsing
 
         public string CreateVpkCompatibleWorkbook(string sourceExcelPath)
         {
-            using var wb = ExcelUtils.Open(sourceExcelPath);
-            // В книге один лист «ЗЗГТ», но на всякий дефолтимся к первому
-            var sh = wb.GetSheet("ЗЗГТ") ?? wb.GetSheetAt(0);
-            if (sh == null) throw new InvalidOperationException("Не найден лист Excel.");
-
-            var header = sh.GetRow(sh.FirstRowNum);
-            if (header == null) throw new InvalidOperationException("Не найдена строка заголовков.");
-
-            // Карта "нормализованный заголовок" -> индекс
-            var headers = BuildHeaderMap(header);
-
-            int idxOrg        = FindIndex(headers, H_Org);
-            int idxDep        = FindIndex(headers, H_Department);
-            int idxName       = FindIndex(headers, H_Name);
-            int idxPos        = FindIndex(headers, H_Position);
-            int idxEmail      = FindIndex(headers, H_Email);
-            int idxCityCode   = FindIndex(headers, H_CityCode);
-            int idxCityNumber = FindIndex(headers, H_CityNumber);
-            int idxMobile     = FindIndex(headers, H_Mobile);
-            int idxInternal   = FindIndex(headers, H_Internal);
-
+            using var wb = WorkbookHelper.OpenWorkbook(sourceExcelPath);
+            
+            bool anyValid = false;
             var rows = new List<NormalizedContactRow>();
 
-            for (int r = sh.FirstRowNum + 1; r <= sh.LastRowNum; r++)
+            // Проверяем все листы книги с железобетонной валидацией
+            for (int s = 0; s < wb.NumberOfSheets; s++)
             {
-                var row = sh.GetRow(r);
-                if (row == null) continue;
-
-                string org        = CleanTrailingLiteralNewlines(Read(row, idxOrg));
-                string dep        = CleanTrailingLiteralNewlines(Read(row, idxDep));
-                string name       = CleanTrailingLiteralNewlines(Read(row, idxName));
-                string position   = CleanTrailingLiteralNewlines(Read(row, idxPos));
-                string email      = CleanTrailingLiteralNewlines(Read(row, idxEmail));
-                string cityCode   = Read(row, idxCityCode);
-                string cityNumber = Read(row, idxCityNumber);
-                string mobile     = Read(row, idxMobile);
-                string internalNo = Read(row, idxInternal);
-
-                // Собираем локацию для поля ORG (организация + подразделение)
-                string location = CombineNonEmpty(org, dep, sep: " / ");
-
-                // Выбираем телефон: приоритет мобильному, иначе городской (код + номер)
-                string phone = ChoosePhone(mobile, cityCode, cityNumber);
-
-                // Добавочный номер: если он есть, и есть основной номер - сохраняем для обработки как ext
-                // Если основного нет, добавочный пойдет в InternalPhone для записи в NOTE
-                string cleanInternal = CleanSpaces(internalNo);
+                var sh = wb.GetSheetAt(s);
+                var (ok, start, why) = StrictSchemaValidator.ValidateFirstRowExact("ЗЗГТ", sh);
                 
-                // Определяем, является ли внутренний номер добавочным (3-5 цифр)
-                bool isExtension = !string.IsNullOrEmpty(cleanInternal) && 
-                                  cleanInternal.All(char.IsDigit) && 
-                                  cleanInternal.Length >= 3 && 
-                                  cleanInternal.Length <= 5;
-
-                string finalInternalPhone = "";
-                
-                // Если есть основной номер и добавочный - добавочный будет обработан как ext
-                // Если нет основного номера, но есть добавочный - записываем его для NOTE
-                if (isExtension)
-                {
-                    if (string.IsNullOrEmpty(phone))
-                    {
-                        // Нет основного номера - добавочный в NOTE
-                        finalInternalPhone = cleanInternal;
-                    }
-                    // Если есть основной номер, добавочный будет в phone как ext, InternalPhone остается пустым
-                }
-                else if (!string.IsNullOrEmpty(cleanInternal))
-                {
-                    // Это не добавочный (длинный номер) - пытаемся нормализовать
-                    var normalized = RuPhone.NormalizeToE164RU(cleanInternal);
-                    if (!string.IsNullOrEmpty(normalized))
-                    {
-                        finalInternalPhone = normalized;
-                    }
+                if (!ok) 
+                { 
+                    Console.WriteLine($"[ЗЗГТ] Пропуск «{sh.SheetName}»: {why}"); 
+                    continue; 
                 }
 
-                // Пустые полностью строки пропускаем
-                if (string.IsNullOrWhiteSpace(name) &&
-                    string.IsNullOrWhiteSpace(email) &&
-                    string.IsNullOrWhiteSpace(phone) &&
-                    string.IsNullOrWhiteSpace(finalInternalPhone))
-                    continue;
+                anyValid = true;
+                Console.WriteLine($"[ЗЗГТ] Обрабатываем лист «{sh.SheetName}», начало блока: колонка {start}");
 
-                rows.Add(new NormalizedContactRow
+                var idx = StrictSchemaValidator.GetHeaderIndexes("ЗЗГТ", start);
+
+                for (int r = 1; r <= sh.LastRowNum; r++)
                 {
-                    Location      = location,  // Теперь это "Организация / Подразделение"
-                    Name          = name,
-                    Position      = position,
-                    Email         = email,
-                    Phone         = !string.IsNullOrEmpty(phone) && isExtension && !string.IsNullOrEmpty(cleanInternal) 
-                                   ? $"{phone};ext={cleanInternal}" : phone,  // Основной номер с добавочным
-                    InternalPhone = finalInternalPhone  // Либо пустой, либо номер для NOTE
-                });
+                    var row = sh.GetRow(r);
+                    if (row == null) continue;
+
+                    string fio = Read(row, idx["fio"]);
+                    string title = Read(row, idx["title"]);
+                    string email = Read(row, idx["email"]);
+                    string cityCode = Read(row, idx["code"]);
+                    string cityNumber = Read(row, idx["city"]);
+                    string mobile = Read(row, idx["mobile"]);
+                    string internalNo = Read(row, idx["ext"]);
+
+                    // Выбираем телефон: приоритет мобильному, иначе городской (код + номер)
+                    string phone = ChoosePhone(mobile, cityCode, cityNumber);
+
+                    // Добавочный номер: если он есть, и есть основной номер - сохраняем для обработки как ext
+                    string cleanInternal = CleanSpaces(internalNo);
+                    
+                    // Определяем, является ли внутренний номер добавочным (3-5 цифр)
+                    bool isExtension = !string.IsNullOrEmpty(cleanInternal) && 
+                                      cleanInternal.All(char.IsDigit) && 
+                                      cleanInternal.Length >= 3 && 
+                                      cleanInternal.Length <= 5;
+
+                    string finalInternalPhone = "";
+                    
+                    // Если есть основной номер и добавочный - добавочный будет обработан как ext
+                    // Если нет основного номера, но есть добавочный - записываем его для NOTE
+                    if (isExtension)
+                    {
+                        if (string.IsNullOrEmpty(phone))
+                        {
+                            // Нет основного номера - добавочный в NOTE
+                            finalInternalPhone = cleanInternal;
+                        }
+                        // Если есть основной номер, добавочный будет в phone как ext, InternalPhone остается пустым
+                    }
+                    else if (!string.IsNullOrEmpty(cleanInternal))
+                    {
+                        // Это не добавочный (длинный номер) - пытаемся нормализовать
+                        var normalized = RuPhone.NormalizeToE164RU(cleanInternal);
+                        if (!string.IsNullOrEmpty(normalized))
+                        {
+                            finalInternalPhone = normalized;
+                        }
+                    }
+
+                    // Пустые полностью строки пропускаем
+                    if (string.IsNullOrWhiteSpace(fio) &&
+                        string.IsNullOrWhiteSpace(email) &&
+                        string.IsNullOrWhiteSpace(phone) &&
+                        string.IsNullOrWhiteSpace(finalInternalPhone))
+                        continue;
+
+                    rows.Add(new NormalizedContactRow
+                    {
+                        Location      = "ЗЗГТ",  // Организация
+                        Name          = fio,
+                        Position      = title,
+                        Email         = email,
+                        Phone         = !string.IsNullOrEmpty(phone) && isExtension && !string.IsNullOrEmpty(cleanInternal) 
+                                       ? $"{phone};ext={cleanInternal}" : phone,  // Основной номер с добавочным
+                        InternalPhone = finalInternalPhone  // Либо пустой, либо номер для NOTE
+                    });
+                }
             }
+
+            if (!anyValid)
+                throw new InvalidOperationException("Справочник не соответствует кнопке «ЗЗГТ». Выберите корректный файл.");
 
             // Пишем временный .xlsx с нужными индексами колонок для уже готового VPK-конвертера
             return VpkNormalizedWorkbookBuilder.BuildTempWorkbook(rows, "ZZGT_");
