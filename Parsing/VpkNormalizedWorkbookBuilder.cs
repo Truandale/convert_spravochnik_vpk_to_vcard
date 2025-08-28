@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using NPOI.HSSF.UserModel;
+using NPOI.XSSF.UserModel;
 using NPOI.SS.UserModel;
 
 namespace Converter.Parsing
@@ -27,10 +27,10 @@ namespace Converter.Parsing
 
             // Генерируем уникальное имя файла
             string suffix = GenerateRandomSuffix(6);
-            string tempFileName = Path.Combine(tempPath, $"{prefix}{suffix}.xls");
+            string tempFileName = Path.Combine(tempPath, $"{prefix}{suffix}.xlsx");
 
             // Создаем новую книгу
-            var workbook = new HSSFWorkbook();
+            var workbook = new XSSFWorkbook();
             var sheet = workbook.CreateSheet("Sheet1");
 
             // Создаем заголовки (в формате VPK)

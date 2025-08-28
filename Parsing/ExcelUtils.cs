@@ -1,5 +1,7 @@
 using System;
 using System.IO;
+using System.Diagnostics;
+using System.Windows.Forms;
 using NPOI.HSSF.UserModel;
 using NPOI.SS.UserModel;
 using NPOI.XSSF.UserModel;
@@ -16,15 +18,43 @@ namespace Converter.Parsing
         /// </summary>
         public static IWorkbook Open(string filePath)
         {
-            using var fileStream = new FileStream(filePath, FileMode.Open, FileAccess.Read);
+            Debug.WriteLine($"[DEBUG] ExcelUtils.Open ВХОДНАЯ ТОЧКА: path={filePath}, ext={Path.GetExtension(filePath)}");
             
+            using var fileStream = new FileStream(filePath, FileMode.Open, FileAccess.Read);
             var extension = Path.GetExtension(filePath).ToLowerInvariant();
-            return extension switch
+            Debug.WriteLine($"[DEBUG] ExcelUtils.Open: файл открыт, расширение={extension}");
+            
+            switch (extension)
             {
-                ".xlsx" => new XSSFWorkbook(fileStream),
-                ".xls" => new HSSFWorkbook(fileStream),
-                _ => throw new NotSupportedException($"Формат файла {extension} не поддерживается")
-            };
+                case ".xlsx":
+                    Debug.WriteLine($"[DEBUG] Создаем XSSFWorkbook для {filePath}");
+                    try
+                    {
+                        var xlsxWorkbook = new XSSFWorkbook(fileStream);
+                        Debug.WriteLine($"[DEBUG] XSSFWorkbook успешно создан для {filePath}");
+                        return xlsxWorkbook;
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine($"[ERROR] Ошибка создания XSSFWorkbook: {ex.GetType().Name}: {ex.Message}");
+                        throw;
+                    }
+                case ".xls":
+                    Debug.WriteLine($"[DEBUG] Создаем HSSFWorkbook для {filePath}");
+                    try
+                    {
+                        var xlsWorkbook = new HSSFWorkbook(fileStream);
+                        Debug.WriteLine($"[DEBUG] HSSFWorkbook успешно создан для {filePath}");
+                        return xlsWorkbook;
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine($"[ERROR] Ошибка создания HSSFWorkbook: {ex.GetType().Name}: {ex.Message}");
+                        throw;
+                    }
+                default:
+                    throw new NotSupportedException($"Формат файла {extension} не поддерживается");
+            }
         }
 
         /// <summary>

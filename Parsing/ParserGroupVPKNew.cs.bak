@@ -1,0 +1,197 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using NPOI.SS.UserModel;
+using NPOI.XSSF.UserModel;
+
+namespace Converter.Parsing
+{
+    /// <summary>
+    /// Парсер для кнопки «ВИЦ» с использованием строгой валидации схем.
+    /// Проверяет все листы на соответствие точной колоночной сигнатуре ВИЦ,
+    /// читает данные только из валидных листов.
+    /// </summary>
+    public sealed class ParserGroupVPK : IExcelParser
+    {
+        public string Name => "ВИЦ";
+
+        public string Process(string inputFilePath)
+        {
+            Logger.Info($"ParserGroupVPK: Начинаем обработку файла {inputFilePath}");
+
+            // Создаем временный файл для вывода
+            var tempFile = Path.GetTempFileName().Replace(".tmp", ".xlsx");
+            Logger.Info($"ParserGroupVPK: Создаем временный файл {tempFile}");
+
+            var contacts = new List<NormalizedContactRow>();
+
+            using var workbook = ExcelUtils.Open(inputFilePath);
+            Logger.Info($"ParserGroupVPK: Загружена книга с {workbook.NumberOfSheets} листами");
+
+            // Обрабатываем каждый лист
+            for (int sheetIndex = 0; sheetIndex < workbook.NumberOfSheets; sheetIndex++)
+            {
+                var sheet = workbook.GetSheetAt(sheetIndex);
+                string sheetName = sheet.SheetName;
+                Logger.Info($"ParserGroupVPK: Проверяем лист '{sheetName}'");
+
+                // Строгая валидация схемы для ВИЦ
+                var validation = StrictSchemaValidator.ValidateVIC(sheet);
+                
+                if (!validation.IsValid)
+                {
+                    Logger.Info($"ParserGroupVPK: Лист '{sheetName}' не соответствует схеме ВИЦ: {validation.Reason}");
+                    continue;
+                }
+
+                Logger.Info($"ParserGroupVPK: Лист '{sheetName}' соответствует схеме ВИЦ. " +
+                           $"Строка заголовков: {validation.HeaderRowIndex + 1}, " +
+                           $"Начало среза: {validation.SliceStart}, " +
+                           $"Длина среза: {validation.SliceLength}");
+
+                // Читаем данные из валидного листа
+                var sheetContacts = ReadSheetData(sheet, validation.HeaderRowIndex, validation.SliceStart);
+                contacts.AddRange(sheetContacts);
+                
+                Logger.Info($"ParserGroupVPK: Из листа '{sheetName}' извлечено {sheetContacts.Count} контактов");
+            }
+
+            if (contacts.Count == 0)
+            {
+                Logger.Error("ParserGroupVPK: Не найдено ни одного валидного листа с данными ВИЦ");
+                throw new InvalidOperationException(
+                    "В файле не найдено листов, соответствующих точной схеме ВИЦ.\n" +
+                    "Ожидаемые колонки (подряд): ФИО | Должность | E-mail | Контактный телефон | Внутр. номер | Подразделение");
+            }
+
+            // Создаем результирующую книгу
+            CreateResultWorkbook(tempFile, contacts);
+            Logger.Info($"ParserGroupVPK: Создан результирующий файл с {contacts.Count} контактами");
+
+            return tempFile;
+        }
+
+        /// <summary>
+        /// Читает данные из листа, используя результат валидации для точного позиционирования колонок
+        /// </summary>
+        private List<NormalizedContactRow> ReadSheetData(ISheet sheet, int headerRowIndex, int sliceStart)
+        {
+            var contacts = new List<NormalizedContactRow>();
+            
+            // Колонки ВИЦ в строгом порядке: ФИО | Должность | E-mail | Контактный телефон | Внутр. номер | Подразделение
+            int colFio = sliceStart + 0;
+            int colPosition = sliceStart + 1;
+            int colEmail = sliceStart + 2;
+            int colPhone = sliceStart + 3;
+            int colInternal = sliceStart + 4;
+            int colDepartment = sliceStart + 5;
+
+            // Читаем строки данных (начиная с headerRowIndex + 1)
+            for (int rowIndex = headerRowIndex + 1; rowIndex <= sheet.LastRowNum; rowIndex++)
+            {
+                var row = sheet.GetRow(rowIndex);
+                if (row == null) continue;
+
+                // Извлекаем данные из колонок
+                string fio = ExcelUtils.GetCellValueAsString(row.GetCell(colFio))?.Trim() ?? "";
+                string position = ExcelUtils.GetCellValueAsString(row.GetCell(colPosition))?.Trim() ?? "";
+                string email = ExcelUtils.GetCellValueAsString(row.GetCell(colEmail))?.Trim() ?? "";
+                string phone = ExcelUtils.GetCellValueAsString(row.GetCell(colPhone))?.Trim() ?? "";
+                string internalNum = ExcelUtils.GetCellValueAsString(row.GetCell(colInternal))?.Trim() ?? "";
+                string department = ExcelUtils.GetCellValueAsString(row.GetCell(colDepartment))?.Trim() ?? "";
+
+                // Пропускаем пустые строки (если нет ФИО)
+                if (string.IsNullOrWhiteSpace(fio)) continue;
+
+                // Нормализуем телефон
+                string normalizedPhone = "";
+                if (!string.IsNullOrWhiteSpace(phone))
+                {
+                    normalizedPhone = RuPhone.NormalizeToE164RU(phone);
+                }
+
+                // Нормализуем внутренний номер
+                string normalizedInternal = "";
+                if (!string.IsNullOrWhiteSpace(internalNum))
+                {
+                    normalizedInternal = RuPhone.StrictE164RU(internalNum);
+                    if (string.IsNullOrEmpty(normalizedInternal))
+                    {
+                        // Если не удалось нормализовать, оставляем как есть
+                        normalizedInternal = internalNum;
+                    }
+                }
+
+                // Создаем нормализованный контакт
+                var contact = new NormalizedContactRow
+                {
+                    Location = "ВИЦ",
+                    Name = fio,
+                    Position = position,
+                    Email = email,
+                    Phone = normalizedPhone,
+                    InternalPhone = normalizedInternal
+                };
+
+                // Добавляем подразделение в заметки если есть
+                if (!string.IsNullOrWhiteSpace(department))
+                {
+                    contact.Notes = $"Подразделение: {department}";
+                }
+
+                contacts.Add(contact);
+            }
+
+            return contacts;
+        }
+
+        /// <summary>
+        /// Создает результирующую Excel книгу с нормализованными данными
+        /// </summary>
+        private void CreateResultWorkbook(string outputPath, List<NormalizedContactRow> contacts)
+        {
+            using (var workbook = new XSSFWorkbook())
+            {
+                var sheet = workbook.CreateSheet("ВИЦ_Нормализованные");
+
+                // Создаем заголовки
+                var headerRow = sheet.CreateRow(0);
+                headerRow.CreateCell(0).SetCellValue("Location");
+                headerRow.CreateCell(1).SetCellValue("Name"); 
+                headerRow.CreateCell(2).SetCellValue("Position");
+                headerRow.CreateCell(3).SetCellValue("Email");
+                headerRow.CreateCell(4).SetCellValue("Phone");
+                headerRow.CreateCell(5).SetCellValue("InternalPhone");
+                headerRow.CreateCell(6).SetCellValue("Notes");
+
+                // Заполняем данными
+                for (int i = 0; i < contacts.Count; i++)
+                {
+                    var contact = contacts[i];
+                    var row = sheet.CreateRow(i + 1);
+                    
+                    row.CreateCell(0).SetCellValue(contact.Location ?? "");
+                    row.CreateCell(1).SetCellValue(contact.Name ?? "");
+                    row.CreateCell(2).SetCellValue(contact.Position ?? "");
+                    row.CreateCell(3).SetCellValue(contact.Email ?? "");
+                    row.CreateCell(4).SetCellValue(contact.Phone ?? "");
+                    row.CreateCell(5).SetCellValue(contact.InternalPhone ?? "");
+                    row.CreateCell(6).SetCellValue(contact.Notes ?? "");
+                }
+
+                // Автоширина колонок
+                for (int i = 0; i < 7; i++)
+                {
+                    sheet.AutoSizeColumn(i);
+                }
+
+                // Сохраняем файл
+                using (var fs = new FileStream(outputPath, FileMode.Create, FileAccess.Write))
+                {
+                    workbook.Write(fs);
+                }
+            }
+        }
+    }
+}
