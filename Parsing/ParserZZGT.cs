@@ -33,11 +33,11 @@ namespace Converter.Parsing
             bool anyValid = false;
             var rows = new List<NormalizedContactRow>();
 
-            // Проверяем все листы книги с железобетонной валидацией
+            // Проверяем все листы книги с жёсткой валидацией
             for (int s = 0; s < wb.NumberOfSheets; s++)
             {
                 var sh = wb.GetSheetAt(s);
-                var (ok, start, why) = StrictSchemaValidator.ValidateFirstRowExact("ЗЗГТ", sh);
+                var (ok, why) = StrictSchemaValidator.ValidateSheetFirstRow("ЗЗГТ", sh);
                 
                 if (!ok) 
                 { 
@@ -46,39 +46,27 @@ namespace Converter.Parsing
                 }
 
                 anyValid = true;
-                Console.WriteLine($"[ЗЗГТ] Обрабатываем лист «{sh.SheetName}», начало блока: колонка {start}");
+                Console.WriteLine($"[ЗЗГТ] Обрабатываем лист «{sh.SheetName}»");
 
-                // Получаем индексы по новой сигнатуре ЗЗГТ: [Код города, Городской номер, Мобильный номер, Внутренний телефон]
-                var indexes = StrictSchemaValidator.GetHeaderIndexes("ЗЗГТ", start);
-                int colCode = indexes["code"];
-                int colCity = indexes["city"];
-                int colMobile = indexes["mobile"];
-                int colExt = indexes["ext"];
+                // Парсинг как в 18b487d: находим заголовки и колонки по имени
+                var (headerRowIndex, headersRaw, headersCanon) = HeaderFinder.FindHeaderRow(sh);
+                var cols = HeaderFinder.MapColumns("ЗЗГТ", headersRaw, headersCanon);
 
-                // Ищем ФИО и должность в других колонках (левее или правее от основного блока)
-                var headerRow = sh.GetRow(0);
-                var headerMap = BuildHeaderMap(headerRow);
-                int colFio = FindIndex(headerMap, H_Name);
-                int colTitle = FindIndex(headerMap, H_Position);
-                int colEmail = FindIndex(headerMap, H_Email);
+                Console.WriteLine($"[ЗЗГТ] Найдена строка заголовков: {headerRowIndex}, колонки: {string.Join(", ", cols.Keys)}");
 
-                Console.WriteLine($"[ЗЗГТ] Найденные индексы - код:{colCode}, город:{colCity}, моб:{colMobile}, внутр:{colExt}, ФИО:{colFio}, должность:{colTitle}, email:{colEmail}");
-
-                for (int r = 1; r <= sh.LastRowNum; r++)
+                for (int r = headerRowIndex + 1; r <= sh.LastRowNum; r++)
                 {
                     var row = sh.GetRow(r);
                     if (row == null) continue;
 
-                    // Основные поля из валидированного блока
-                    string cityCode = row.GetCell(colCode)?.ToString() ?? "";
-                    string cityNumber = row.GetCell(colCity)?.ToString() ?? "";
-                    string mobile = row.GetCell(colMobile)?.ToString() ?? "";
-                    string internalNo = row.GetCell(colExt)?.ToString() ?? "";
-
-                    // Дополнительные поля (если найдены в других колонках)
-                    string fio = colFio >= 0 ? (row.GetCell(colFio)?.ToString() ?? "") : "";
-                    string title = colTitle >= 0 ? (row.GetCell(colTitle)?.ToString() ?? "") : "";
-                    string email = colEmail >= 0 ? (row.GetCell(colEmail)?.ToString() ?? "") : "";
+                    // Читаем поля через HeaderFinder
+                    string fio = HeaderFinder.ReadCell(row, cols.GetValueOrDefault("fio", -1));
+                    string title = HeaderFinder.ReadCell(row, cols.GetValueOrDefault("title", -1));
+                    string email = HeaderFinder.ReadCell(row, cols.GetValueOrDefault("email", -1));
+                    string cityCode = HeaderFinder.ReadCell(row, cols.GetValueOrDefault("code", -1));
+                    string cityNumber = HeaderFinder.ReadCell(row, cols.GetValueOrDefault("city", -1));
+                    string mobile = HeaderFinder.ReadCell(row, cols.GetValueOrDefault("mobile", -1));
+                    string internalNo = HeaderFinder.ReadCell(row, cols.GetValueOrDefault("ext", -1));
 
                     // Пропускаем строки без основных данных (телефонов)
                     if (string.IsNullOrWhiteSpace(mobile) && (string.IsNullOrWhiteSpace(cityCode) || string.IsNullOrWhiteSpace(cityNumber)))

@@ -35,11 +35,11 @@ namespace Converter.Parsing
             bool anyValid = false;
             var rows = new List<NormalizedContactRow>();
 
-            // Проверяем все листы книги с железобетонной валидацией
+            // Проверяем все листы книги с жёсткой валидацией
             for (int s = 0; s < wb.NumberOfSheets; s++)
             {
                 var sh = wb.GetSheetAt(s);
-                var (ok, start, why) = StrictSchemaValidator.ValidateFirstRowExact("ВИЦ", sh);
+                var (ok, why) = StrictSchemaValidator.ValidateSheetFirstRow("ВИЦ", sh);
                 
                 if (!ok) 
                 { 
@@ -48,48 +48,35 @@ namespace Converter.Parsing
                 }
 
                 anyValid = true;
-                Console.WriteLine($"[ВИЦ] Обрабатываем лист «{sh.SheetName}», начало блока: колонка {start}");
+                Console.WriteLine($"[ВИЦ] Обрабатываем лист «{sh.SheetName}»");
 
-                // Получаем индексы по новой сигнатуре ВИЦ: [Мобильный номер, Дополнительный номер/ e-mail, Внутренний телефон]
-                var indexes = StrictSchemaValidator.GetHeaderIndexes("ВИЦ", start);
-                int colMobile = indexes["mobile"];
-                int colExtra = indexes["extra"];
-                int colExt = indexes["ext"];
+                // Парсинг как в 18b487d: находим заголовки и колонки по имени
+                var (headerRowIndex, headersRaw, headersCanon) = HeaderFinder.FindHeaderRow(sh);
+                var cols = HeaderFinder.MapColumns("ВИЦ", headersRaw, headersCanon);
 
-                // Ищем ФИО и должность в других колонках (левее или правее от основного блока)
-                var headerRow = sh.GetRow(0);
-                var headerMap = BuildHeaderMap(headerRow);
-                int colFio = FindIndex(headerMap, H_Name);
-                int colTitle = FindIndex(headerMap, H_Position);
-                int colEmail = FindIndex(headerMap, H_Email);
-                int colOrg = FindIndex(headerMap, H_Org);
-                int colDep = FindIndex(headerMap, H_Department);
+                Console.WriteLine($"[ВИЦ] Найдена строка заголовков: {headerRowIndex}, колонки: {string.Join(", ", cols.Keys)}");
 
-                Console.WriteLine($"[ВИЦ] Найденные индексы - моб:{colMobile}, доп:{colExtra}, внутр:{colExt}, ФИО:{colFio}, должность:{colTitle}, email:{colEmail}");
-
-                for (int r = 1; r <= sh.LastRowNum; r++)
+                for (int r = headerRowIndex + 1; r <= sh.LastRowNum; r++)
                 {
                     var row = sh.GetRow(r);
                     if (row == null) continue;
 
-                    // Основные поля из валидированного блока
-                    string mobile = row.GetCell(colMobile)?.ToString() ?? "";
-                    string extra = row.GetCell(colExtra)?.ToString() ?? "";
-                    string internalNo = row.GetCell(colExt)?.ToString() ?? "";
-
-                    // Дополнительные поля (если найдены в других колонках)
-                    string name = colFio >= 0 ? CleanTextQuality(row.GetCell(colFio)?.ToString() ?? "") : "";
-                    string position = colTitle >= 0 ? CleanTextQuality(row.GetCell(colTitle)?.ToString() ?? "") : "";
-                    string email = colEmail >= 0 ? (row.GetCell(colEmail)?.ToString() ?? "") : "";
-                    string org = colOrg >= 0 ? CleanTextQuality(row.GetCell(colOrg)?.ToString() ?? "") : "";
-                    string dep = colDep >= 0 ? CleanTextQuality(row.GetCell(colDep)?.ToString() ?? "") : "";
+                    // Читаем поля через HeaderFinder
+                    string name = HeaderFinder.ReadCell(row, cols.GetValueOrDefault("fio", -1));
+                    string position = HeaderFinder.ReadCell(row, cols.GetValueOrDefault("title", -1));
+                    string email = HeaderFinder.ReadCell(row, cols.GetValueOrDefault("email", -1));
+                    string mobile = HeaderFinder.ReadCell(row, cols.GetValueOrDefault("mobile", -1));
+                    string extra = HeaderFinder.ReadCell(row, cols.GetValueOrDefault("extra", -1));
+                    string internalNo = HeaderFinder.ReadCell(row, cols.GetValueOrDefault("ext", -1));
+                    string org = HeaderFinder.ReadCell(row, cols.GetValueOrDefault("org", -1));
+                    string dep = HeaderFinder.ReadCell(row, cols.GetValueOrDefault("department", -1));
 
                     // Пропускаем строки без основных данных (телефонов)
                     if (string.IsNullOrWhiteSpace(mobile) && string.IsNullOrWhiteSpace(extra))
                         continue;
 
                     // Организация для ORG поля
-                    string organization = CombineNonEmpty(org, dep, " / ");
+                    string organization = CombineNonEmpty(CleanTextQuality(org), CleanTextQuality(dep), " / ");
 
                     // Если основного email нет, но в "Дополнительный номер/ e-mail" лежит почта — берём её.
                     if (string.IsNullOrWhiteSpace(email) && IsEmail(extra))

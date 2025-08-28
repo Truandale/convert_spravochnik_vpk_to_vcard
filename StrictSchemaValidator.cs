@@ -38,13 +38,13 @@ namespace convert_spravochnik_vpk_to_vcard
             ["ЗЗГТ"] = new(@"ззгт", RegexOptions.IgnoreCase),
         };
 
-        public static (bool ok, int start, string why) ValidateFirstRowExact(string button, ISheet sh)
+        public static (bool ok, string why) ValidateSheetFirstRow(string button, ISheet sh)
         {
             if (!Sig.TryGetValue(button, out var sig) || sig.Length == 0)
-                return (false, -1, $"Неизвестная кнопка «{button}» (нет сигнатуры).");
+                return (false, $"Неизвестная кнопка «{button}» (нет сигнатуры).");
 
             var row0 = sh.GetRow(0);
-            if (row0 == null) return (false, -1, $"Лист «{sh.SheetName}»: первая строка пустая.");
+            if (row0 == null) return (false, $"Лист «{sh.SheetName}»: первая строка пустая.");
 
             var hdr = new List<string>();
             for (int c = 0; c < row0.LastCellNum; c++)
@@ -66,26 +66,14 @@ namespace convert_spravochnik_vpk_to_vcard
                 {
                     // доп. якорь по имени листа (снимите, если не нужно)
                     if (SheetNameGuard.TryGetValue(button, out var re) && !re.IsMatch(sh.SheetName))
-                        return (false, -1, $"Лист «{sh.SheetName}»: имя листа не соответствует кнопке «{button}».");
-                    return (true, i, "");
+                        return (false, $"Лист «{sh.SheetName}»: имя листа не соответствует кнопке «{button}».");
+                    return (true, "");
                 }
             }
 
             var got  = string.Join(" | ", hdr);
             var need = string.Join(" | ", sig);
-            return (false, -1, $"Лист «{sh.SheetName}»: заголовки не совпадают.\nОжидалось: [{need}]\nПолучено:  [{got}]");
+            return (false, $"Лист «{sh.SheetName}»: заголовки не совпадают.\nОжидалось: [{need}]\nПолучено:  [{got}]");
         }
-
-        // Индексы полей от начала совпавшего блока (чтобы парсеры не «искали» сами)
-        // Основано на РЕАЛЬНЫХ позициях в Excel файлах после валидации
-        public static Dictionary<string,int> GetHeaderIndexes(string button, int start) =>
-            button switch
-            {
-                "ВПК"  => new() { ["fio"]=start+0, ["title"]=start+1, ["email"]=start+2, ["cell"]=start+3, ["ext"]=start+4 },
-                "ВЗК"  => new() { ["code"]=start+0, ["city"]=start+1, ["mobile"]=start+2, ["ext"]=start+3 },
-                "ВИЦ"  => new() { ["mobile"]=start+0, ["extra"]=start+1, ["ext"]=start+2 },
-                "ЗЗГТ" => new() { ["code"]=start+0, ["city"]=start+1, ["mobile"]=start+2, ["ext"]=start+3 },
-                _      => throw new InvalidOperationException($"Неизвестная кнопка «{button}».")
-            };
     }
 }
