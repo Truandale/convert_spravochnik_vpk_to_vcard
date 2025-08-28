@@ -166,13 +166,13 @@ namespace convert_spravochnik_vpk_to_vcard
 
                         try
                         {
-                            // Читаем основные поля (предполагаем стандартную структуру ВПК)
-                            var location = dataRow.GetCell(0)?.ToString()?.Trim() ?? "";
-                            var name = dataRow.GetCell(1)?.ToString()?.Trim() ?? "";
-                            var position = dataRow.GetCell(2)?.ToString()?.Trim() ?? "";
-                            var email = dataRow.GetCell(3)?.ToString()?.Trim() ?? "";
-                            var phone = dataRow.GetCell(4)?.ToString()?.Trim() ?? "";
-                            var internalPhone = dataRow.GetCell(5)?.ToString()?.Trim() ?? "";
+                            // Читаем основные поля (формат из VpkNormalizedWorkbookBuilder)
+                            var location = dataRow.GetCell(1)?.ToString()?.Trim() ?? "";   // Колонка 1 - Локация
+                            var name = dataRow.GetCell(3)?.ToString()?.Trim() ?? "";       // Колонка 3 - ФИО
+                            var position = dataRow.GetCell(4)?.ToString()?.Trim() ?? "";   // Колонка 4 - Должность
+                            var email = dataRow.GetCell(5)?.ToString()?.Trim() ?? "";      // Колонка 5 - Email
+                            var phone = dataRow.GetCell(6)?.ToString()?.Trim() ?? "";      // Колонка 6 - Телефон
+                            var internalPhone = dataRow.GetCell(7)?.ToString()?.Trim() ?? ""; // Колонка 7 - Внутренний
 
                             if (string.IsNullOrWhiteSpace(name))
                                 continue;

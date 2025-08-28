@@ -37,11 +37,11 @@ namespace Converter.Parsing
             for (int s = 0; s < wb.NumberOfSheets; s++)
             {
                 var sh = wb.GetSheetAt(s);
-                var (ok, why) = StrictSchemaValidator.ValidateSheetFirstRow("ЗЗГТ", sh);
+                var validation = StrictSchemaValidator.ValidateZZGT(sh);
                 
-                if (!ok) 
+                if (!validation.IsValid) 
                 { 
-                    Console.WriteLine($"[ЗЗГТ] Пропуск «{sh.SheetName}»: {why}"); 
+                    Console.WriteLine($"[ЗЗГТ] Пропуск «{sh.SheetName}»: {validation.Reason}"); 
                     continue; 
                 }
 

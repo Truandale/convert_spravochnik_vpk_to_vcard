@@ -18,6 +18,20 @@ namespace convert_spravochnik_vpk_to_vcard
                 return;
             }
             
+            // Если передан аргумент --test-vcard, запускаем тест vCard
+            if (args.Length > 0 && args[0] == "--test-vcard")
+            {
+                TestVCardOutput.RunTest();
+                return;
+            }
+            
+            // Если передан аргумент --test-zzgt, запускаем тест парсинга ЗЗГТ
+            if (args.Length > 0 && args[0] == "--test-zzgt")
+            {
+                TestVCardOutput.TestZZGTParsing();
+                return;
+            }
+            
             ApplicationConfiguration.Initialize();
             Application.Run(new MainForm());
         }
