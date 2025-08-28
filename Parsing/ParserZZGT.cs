@@ -48,20 +48,41 @@ namespace Converter.Parsing
                 anyValid = true;
                 Console.WriteLine($"[ЗЗГТ] Обрабатываем лист «{sh.SheetName}», начало блока: колонка {start}");
 
-                var idx = StrictSchemaValidator.GetHeaderIndexes("ЗЗГТ", start);
+                // Получаем индексы по новой сигнатуре ЗЗГТ: [Код города, Городской номер, Мобильный номер, Внутренний телефон]
+                var indexes = StrictSchemaValidator.GetHeaderIndexes("ЗЗГТ", start);
+                int colCode = indexes["code"];
+                int colCity = indexes["city"];
+                int colMobile = indexes["mobile"];
+                int colExt = indexes["ext"];
+
+                // Ищем ФИО и должность в других колонках (левее или правее от основного блока)
+                var headerRow = sh.GetRow(0);
+                var headerMap = BuildHeaderMap(headerRow);
+                int colFio = FindIndex(headerMap, H_Name);
+                int colTitle = FindIndex(headerMap, H_Position);
+                int colEmail = FindIndex(headerMap, H_Email);
+
+                Console.WriteLine($"[ЗЗГТ] Найденные индексы - код:{colCode}, город:{colCity}, моб:{colMobile}, внутр:{colExt}, ФИО:{colFio}, должность:{colTitle}, email:{colEmail}");
 
                 for (int r = 1; r <= sh.LastRowNum; r++)
                 {
                     var row = sh.GetRow(r);
                     if (row == null) continue;
 
-                    string fio = Read(row, idx["fio"]);
-                    string title = Read(row, idx["title"]);
-                    string email = Read(row, idx["email"]);
-                    string cityCode = Read(row, idx["code"]);
-                    string cityNumber = Read(row, idx["city"]);
-                    string mobile = Read(row, idx["mobile"]);
-                    string internalNo = Read(row, idx["ext"]);
+                    // Основные поля из валидированного блока
+                    string cityCode = row.GetCell(colCode)?.ToString() ?? "";
+                    string cityNumber = row.GetCell(colCity)?.ToString() ?? "";
+                    string mobile = row.GetCell(colMobile)?.ToString() ?? "";
+                    string internalNo = row.GetCell(colExt)?.ToString() ?? "";
+
+                    // Дополнительные поля (если найдены в других колонках)
+                    string fio = colFio >= 0 ? (row.GetCell(colFio)?.ToString() ?? "") : "";
+                    string title = colTitle >= 0 ? (row.GetCell(colTitle)?.ToString() ?? "") : "";
+                    string email = colEmail >= 0 ? (row.GetCell(colEmail)?.ToString() ?? "") : "";
+
+                    // Пропускаем строки без основных данных (телефонов)
+                    if (string.IsNullOrWhiteSpace(mobile) && (string.IsNullOrWhiteSpace(cityCode) || string.IsNullOrWhiteSpace(cityNumber)))
+                        continue;
 
                     // Выбираем телефон: приоритет мобильному, иначе городской (код + номер)
                     string phone = ChoosePhone(mobile, cityCode, cityNumber);

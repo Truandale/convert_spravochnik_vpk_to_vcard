@@ -20,12 +20,13 @@ namespace convert_spravochnik_vpk_to_vcard
 
         // Эталонные последовательности (подряд, на первой строке).
         // ВАЖНО: строки НЕ должны быть пустыми – иначе совпадёт «всё со всем».
+        // Сигнатуры основаны на РЕАЛЬНЫХ заголовках из Excel файлов!
         private static readonly Dictionary<string, string[]> Sig = new()
         {
             ["ВПК"]  = new[]{ Canon("ФИО"), Canon("Должность"), Canon("E-mail"), Canon("Контактный телефон"), Canon("Внутр. номер телефона") },
-            ["ВЗК"]  = new[]{ Canon("ФИО"), Canon("Должность"), Canon("E-mail"), Canon("Код города"), Canon("Городской номер"), Canon("Мобильный номер"), Canon("Внутренний телефон") },
-            ["ВИЦ"]  = new[]{ Canon("ФИО"), Canon("Мобильный номер"), Canon("Дополнительный номер/ e-mail"), Canon("Внутренний телефон") },
-            ["ЗЗГТ"] = new[]{ Canon("ФИО"), Canon("Должность"), Canon("E-mail"), Canon("Код города"), Canon("Городской номер"), Canon("Мобильный номер"), Canon("Внутренний телефон") },
+            ["ВЗК"]  = new[]{ Canon("Код города"), Canon("Городской номер"), Canon("Мобильный номер"), Canon("Внутренний телефон") },
+            ["ВИЦ"]  = new[]{ Canon("Мобильный номер"), Canon("Дополнительный номер/ e-mail"), Canon("Внутренний телефон") },
+            ["ЗЗГТ"] = new[]{ Canon("Код города"), Canon("Городской номер"), Canon("Мобильный номер"), Canon("Внутренний телефон") },
         };
 
         // (опционально) различаем листы с одинаковой шапкой по имени листа
@@ -76,13 +77,14 @@ namespace convert_spravochnik_vpk_to_vcard
         }
 
         // Индексы полей от начала совпавшего блока (чтобы парсеры не «искали» сами)
+        // Основано на РЕАЛЬНЫХ позициях в Excel файлах после валидации
         public static Dictionary<string,int> GetHeaderIndexes(string button, int start) =>
             button switch
             {
                 "ВПК"  => new() { ["fio"]=start+0, ["title"]=start+1, ["email"]=start+2, ["cell"]=start+3, ["ext"]=start+4 },
-                "ВЗК"  => new() { ["fio"]=start+0, ["title"]=start+1, ["email"]=start+2, ["code"]=start+3, ["city"]=start+4, ["mobile"]=start+5, ["ext"]=start+6 },
-                "ВИЦ"  => new() { ["fio"]=start+0, ["mobile"]=start+1, ["extra"]=start+2, ["ext"]=start+3 },
-                "ЗЗГТ" => new() { ["fio"]=start+0, ["title"]=start+1, ["email"]=start+2, ["code"]=start+3, ["city"]=start+4, ["mobile"]=start+5, ["ext"]=start+6 },
+                "ВЗК"  => new() { ["code"]=start+0, ["city"]=start+1, ["mobile"]=start+2, ["ext"]=start+3 },
+                "ВИЦ"  => new() { ["mobile"]=start+0, ["extra"]=start+1, ["ext"]=start+2 },
+                "ЗЗГТ" => new() { ["code"]=start+0, ["city"]=start+1, ["mobile"]=start+2, ["ext"]=start+3 },
                 _      => throw new InvalidOperationException($"Неизвестная кнопка «{button}».")
             };
     }
