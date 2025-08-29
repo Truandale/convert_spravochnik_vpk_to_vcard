@@ -224,11 +224,18 @@ namespace convert_spravochnik_vpk_to_vcard
                                 if (!string.IsNullOrWhiteSpace(internalPhone))
                                 {
                                     // Для ВПК внутренний номер - это extension, не Note
-                                    // Если несколько номеров, берем первый
-                                    var cleanExt = internalPhone.Split(new[] { ',', ';', ' ' }, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault()?.Trim();
-                                    if (!string.IsNullOrEmpty(cleanExt))
+                                    // Если несколько номеров, объединяем их все
+                                    var allExtensions = internalPhone.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries)
+                                        .Select(ext => ext.Trim())
+                                        .Where(ext => !string.IsNullOrEmpty(ext))
+                                        .Select(ext => new string(ext.Where(char.IsDigit).ToArray()))
+                                        .Where(ext => !string.IsNullOrEmpty(ext))
+                                        .ToList();
+                                    
+                                    if (allExtensions.Any())
                                     {
-                                        contact.Ext = new string(cleanExt.Where(char.IsDigit).ToArray());
+                                        // Если один номер - в Ext, если несколько - объединяем через запятую
+                                        contact.Ext = string.Join(", ", allExtensions);
                                     }
                                 }
                                 
@@ -281,11 +288,18 @@ namespace convert_spravochnik_vpk_to_vcard
                                 if (!string.IsNullOrWhiteSpace(internalPhone))
                                 {
                                     // Для других парсеров внутренний номер тоже extension
-                                    // Если несколько номеров, берем первый
-                                    var cleanExt = internalPhone.Split(new[] { ',', ';', ' ' }, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault()?.Trim();
-                                    if (!string.IsNullOrEmpty(cleanExt) && string.IsNullOrEmpty(contact.Ext))
+                                    // Если несколько номеров, объединяем их все
+                                    var allExtensions = internalPhone.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries)
+                                        .Select(ext => ext.Trim())
+                                        .Where(ext => !string.IsNullOrEmpty(ext))
+                                        .Select(ext => new string(ext.Where(char.IsDigit).ToArray()))
+                                        .Where(ext => !string.IsNullOrEmpty(ext))
+                                        .ToList();
+                                    
+                                    if (allExtensions.Any() && string.IsNullOrEmpty(contact.Ext))
                                     {
-                                        contact.Ext = new string(cleanExt.Where(char.IsDigit).ToArray());
+                                        // Если один номер - в Ext, если несколько - объединяем через запятую
+                                        contact.Ext = string.Join(", ", allExtensions);
                                     }
                                 }
                                 
