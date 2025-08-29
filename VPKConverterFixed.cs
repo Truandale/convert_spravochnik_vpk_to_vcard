@@ -234,8 +234,8 @@ namespace convert_spravochnik_vpk_to_vcard
                                     
                                     if (allExtensions.Any())
                                     {
-                                        // Если один номер - в Ext, если несколько - объединяем через запятую
-                                        contact.Ext = string.Join(", ", allExtensions);
+                                        // Если один номер - в Ext, если несколько - объединяем через точку с запятой
+                                        contact.Ext = string.Join("; ", allExtensions);
                                     }
                                 }
                                 
@@ -298,8 +298,8 @@ namespace convert_spravochnik_vpk_to_vcard
                                     
                                     if (allExtensions.Any() && string.IsNullOrEmpty(contact.Ext))
                                     {
-                                        // Если один номер - в Ext, если несколько - объединяем через запятую
-                                        contact.Ext = string.Join(", ", allExtensions);
+                                        // Если один номер - в Ext, если несколько - объединяем через точку с запятой
+                                        contact.Ext = string.Join("; ", allExtensions);
                                     }
                                 }
                                 
