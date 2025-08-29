@@ -6,6 +6,15 @@
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    
+    <!-- Иконка приложения -->
+    <ApplicationIcon>app_icon.ico</ApplicationIcon>
+    <AssemblyTitle>VPK Converter</AssemblyTitle>
+    <AssemblyDescription>Конвертер Excel справочников в Apple vCard формат</AssemblyDescription>
+    <AssemblyCompany>Truandale</AssemblyCompany>
+    <AssemblyProduct>VPK to vCard Converter</AssemblyProduct>
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+    <FileVersion>1.0.0.0</FileVersion>
   </PropertyGroup>
 
   <ItemGroup>
