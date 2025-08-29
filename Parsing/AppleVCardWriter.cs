@@ -25,6 +25,7 @@ namespace Converter.Parsing
             public string WorkE164 { get; set; } = "";
             public string Ext { get; set; } = "";
             public string Note { get; set; } = "";
+            public string City { get; set; } = ""; // Город для поля ADR
         }
 
         /// <summary>
@@ -77,6 +78,63 @@ namespace Converter.Parsing
         }
 
         /// <summary>
+        /// Записывает строку с line folding согласно vCard 3.0 (максимум 75 октетов на строку)
+        /// Переносит длинные строки, начиная продолжение с пробела
+        /// </summary>
+        public static void WriteFoldedLine(StreamWriter w, string line)
+        {
+            const int maxLineLength = 75;
+            
+            if (line.Length <= maxLineLength)
+            {
+                w.WriteLine(line);
+                return;
+            }
+            
+            // Разбиваем строку по октетам (UTF-8), соблюдая максимум 75 октетов
+            var bytes = Encoding.UTF8.GetBytes(line);
+            if (bytes.Length <= maxLineLength)
+            {
+                w.WriteLine(line);
+                return;
+            }
+            
+            var currentPos = 0;
+            var firstLine = true;
+            
+            while (currentPos < bytes.Length)
+            {
+                var remainingBytes = bytes.Length - currentPos;
+                var lineLength = Math.Min(firstLine ? maxLineLength : maxLineLength - 1, remainingBytes);
+                
+                // Находим безопасную позицию для разрыва (не внутри UTF-8 символа)
+                // ВАЖНО: проверяем границы массива ПЕРЕД обращением к элементу
+                while (lineLength > 0 && (currentPos + lineLength) < bytes.Length && (bytes[currentPos + lineLength] & 0xC0) == 0x80)
+                {
+                    lineLength--;
+                }
+                
+                if (lineLength <= 0) lineLength = 1; // Защита от бесконечного цикла
+                
+                var lineBytes = new byte[lineLength];
+                Array.Copy(bytes, currentPos, lineBytes, 0, lineLength);
+                var lineText = Encoding.UTF8.GetString(lineBytes);
+                
+                if (firstLine)
+                {
+                    w.WriteLine(lineText);
+                    firstLine = false;
+                }
+                else
+                {
+                    w.WriteLine(" " + lineText); // Продолжение строки начинается с пробела
+                }
+                
+                currentPos += lineLength;
+            }
+        }
+
+        /// <summary>
         /// Записывает один контакт в Apple-совместимом формате vCard 3.0
         /// </summary>
         public static void WriteContact(StreamWriter w, Contact c)
@@ -85,22 +143,22 @@ namespace Converter.Parsing
             w.WriteLine("VERSION:3.0");
             
             // FN - как на визитке
-            w.WriteLine($"FN:{Esc(c.FullName)}");
+            WriteFoldedLine(w, $"FN:{Esc(c.FullName)}");
             
             // N - структурированное имя (Фамилия;Имя;Отчество;;)
             var (lastName, firstName, middleName) = SplitFio(c.FullName);
-            w.WriteLine($"N:{Esc(lastName)};{Esc(firstName)};{Esc(middleName)};;");
+            WriteFoldedLine(w, $"N:{Esc(lastName)};{Esc(firstName)};{Esc(middleName)};;");
 
             // ORG - только если есть настоящая организация (не дублируем FN)
             if (!string.IsNullOrWhiteSpace(c.OrgOrDept))
             {
-                w.WriteLine($"ORG:{Esc(c.OrgOrDept)}");
+                WriteFoldedLine(w, $"ORG:{Esc(c.OrgOrDept)}");
             }
 
             // TITLE - должность
             if (!string.IsNullOrWhiteSpace(c.Title))
             {
-                w.WriteLine($"TITLE:{Esc(c.Title)}");
+                WriteFoldedLine(w, $"TITLE:{Esc(c.Title)}");
             }
 
             // EMAIL - разбиваем на отдельные строки (с качественной проверкой)
@@ -108,44 +166,45 @@ namespace Converter.Parsing
             {
                 if (IsValidEmail(emailAddr))
                 {
-                    w.WriteLine($"EMAIL;TYPE=INTERNET:{Esc(emailAddr)}");
+                    WriteFoldedLine(w, $"EMAIL;TYPE=INTERNET:{Esc(emailAddr)}");
                 }
             }
 
-            // Мобильный телефон (качественная проверка + умное определение типа)
+            // Мобильный телефон (Apple-совместимый формат без tel: URI)
             if (!string.IsNullOrWhiteSpace(c.MobileE164))
             {
                 var strictPhone = RuPhone.StrictE164RU(c.MobileE164);
                 if (!string.IsNullOrEmpty(strictPhone) && IsValidE164Phone(strictPhone))
                 {
                     var phoneType = GetCorrectPhoneType(strictPhone);
-                    w.WriteLine($"TEL;TYPE={phoneType},VOICE:{strictPhone}");
+                    WriteFoldedLine(w, $"TEL;TYPE={phoneType}:{strictPhone}");
                 }
             }
 
-            // Рабочий телефон с добавочным (качественная проверка)
+            // Рабочий телефон с добавочным (Apple-совместимый формат)
             if (!string.IsNullOrWhiteSpace(c.WorkE164))
             {
                 var strictWork = RuPhone.StrictE164RU(c.WorkE164);
                 if (!string.IsNullOrEmpty(strictWork) && IsValidE164Phone(strictWork))
                 {
+                    // Основной рабочий номер
+                    WriteFoldedLine(w, $"TEL;TYPE=WORK:{strictWork}");
+                    
                     if (!string.IsNullOrWhiteSpace(c.Ext))
                     {
-                        // RFC 3966 формат для добавочного номера (с валидацией)
-                        var telUri = $"tel:{strictWork};ext={c.Ext}";
-                        if (IsValidE164Phone(telUri))
+                        // Добавочный как отдельный номер с паузой (Apple-совместимый способ)
+                        WriteFoldedLine(w, $"TEL;TYPE=WORK:{strictWork},{c.Ext}");
+                        
+                        // Дублируем в NOTE для ясности
+                        var extNote = $"доб. {c.Ext}";
+                        if (!string.IsNullOrWhiteSpace(c.Note))
                         {
-                            w.WriteLine($"TEL;TYPE=WORK,VOICE;VALUE=uri:{telUri}");
+                            c.Note = $"{c.Note}; {extNote}";
                         }
                         else
                         {
-                            // Fallback: пишем основной номер без добавочного
-                            w.WriteLine($"TEL;TYPE=WORK,VOICE:{strictWork}");
+                            c.Note = extNote;
                         }
-                    }
-                    else
-                    {
-                        w.WriteLine($"TEL;TYPE=WORK,VOICE:{strictWork}");
                     }
                 }
             }
@@ -163,10 +222,18 @@ namespace Converter.Parsing
                 }
             }
 
+            // ADR - адрес (если есть город)
+            if (!string.IsNullOrWhiteSpace(c.City))
+            {
+                // Формат ADR: ;;улица;город;регион;индекс;страна
+                // Мы указываем только город
+                WriteFoldedLine(w, $"ADR;TYPE=WORK:;;;{Esc(c.City)};;;");
+            }
+
             // NOTE для дополнительной информации
             if (!string.IsNullOrWhiteSpace(c.Note))
             {
-                w.WriteLine($"NOTE:{Esc(c.Note)}");
+                WriteFoldedLine(w, $"NOTE:{Esc(c.Note)}");
             }
 
             w.WriteLine("END:VCARD");

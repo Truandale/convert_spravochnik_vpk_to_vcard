@@ -159,6 +159,18 @@ namespace convert_spravochnik_vpk_to_vcard
                     anyValid = true;
                     System.Diagnostics.Debug.WriteLine($"[DEBUG] Лист {sheet.SheetName} содержит {sheet.LastRowNum} строк, обрабатываем...");
 
+                    // Определяем тип файла по заголовкам или имени листа
+                    bool isOriginalVPK = false;
+                    var headerRow = sheet.GetRow(0);
+                    if (headerRow != null)
+                    {
+                        var header1 = headerRow.GetCell(1)?.ToString()?.Trim() ?? "";
+                        // Если заголовок колонки 1 содержит "Местонахождение" - это оригинальный ВПК
+                        // Если "Локация" - это нормализованный файл от других парсеров
+                        isOriginalVPK = header1.Contains("Местонахождение");
+                        System.Diagnostics.Debug.WriteLine($"[DEBUG] Заголовок колонки 1: '{header1}', isOriginalVPK: {isOriginalVPK}");
+                    }
+
                     for (int row = 1; row <= sheet.LastRowNum; row++)
                     {
                         var dataRow = sheet.GetRow(row);
@@ -166,54 +178,119 @@ namespace convert_spravochnik_vpk_to_vcard
 
                         try
                         {
-                            // Читаем основные поля (формат из VpkNormalizedWorkbookBuilder)
-                            var location = dataRow.GetCell(1)?.ToString()?.Trim() ?? "";   // Колонка 1 - Локация
-                            var name = dataRow.GetCell(3)?.ToString()?.Trim() ?? "";       // Колонка 3 - ФИО
-                            var position = dataRow.GetCell(4)?.ToString()?.Trim() ?? "";   // Колонка 4 - Должность
-                            var email = dataRow.GetCell(5)?.ToString()?.Trim() ?? "";      // Колонка 5 - Email
-                            var phone = dataRow.GetCell(6)?.ToString()?.Trim() ?? "";      // Колонка 6 - Телефон
-                            var internalPhone = dataRow.GetCell(7)?.ToString()?.Trim() ?? ""; // Колонка 7 - Внутренний
-
-                            if (string.IsNullOrWhiteSpace(name))
-                                continue;
-
-                            var contact = new AppleVCardWriter.Contact
+                            if (isOriginalVPK)
                             {
-                                FullName = name,
-                                OrgOrDept = location,
-                                Title = position,
-                                Email = !string.IsNullOrWhiteSpace(email) ? email : "",
-                                Note = ""
-                            };
-                            
-                            // Обрабатываем телефоны
-                            if (!string.IsNullOrWhiteSpace(phone))
-                            {
-                                var (mainPhone, extension, additionalPhones) = ProcessPhoneString(phone);
-                                if (!string.IsNullOrEmpty(mainPhone))
+                                // Оригинальный ВПК файл
+                                var location = dataRow.GetCell(1)?.ToString()?.Trim() ?? "";   // Колонка 1 - Местонахождение (город)
+                                var name = dataRow.GetCell(3)?.ToString()?.Trim() ?? "";       // Колонка 3 - ФИО
+                                var position = dataRow.GetCell(4)?.ToString()?.Trim() ?? "";   // Колонка 4 - Должность
+                                var email = dataRow.GetCell(5)?.ToString()?.Trim() ?? "";      // Колонка 5 - Email
+                                var phone = dataRow.GetCell(6)?.ToString()?.Trim() ?? "";      // Колонка 6 - Телефон
+                                var internalPhone = dataRow.GetCell(7)?.ToString()?.Trim() ?? ""; // Колонка 7 - Внутренний
+
+                                if (string.IsNullOrWhiteSpace(name))
+                                    continue;
+
+                                // Очищаем переносы строк из имени и должности
+                                name = System.Text.RegularExpressions.Regex.Replace(name.Replace("\n", " ").Replace("\r", " "), @"\s+", " ").Trim();
+                                position = System.Text.RegularExpressions.Regex.Replace(position.Replace("\n", " ").Replace("\r", " "), @"\s+", " ").Trim();
+
+                                var contact = new AppleVCardWriter.Contact
                                 {
-                                    if (IsMobileNumber(mainPhone))
-                                        contact.MobileE164 = mainPhone;
-                                    else
-                                        contact.WorkE164 = mainPhone;
+                                    FullName = name,
+                                    OrgOrDept = "", // ВПК не имеет поля организации, оставляем пустым
+                                    Title = position,
+                                    Email = !string.IsNullOrWhiteSpace(email) ? email : "",
+                                    City = location, // Местонахождение (город) в поле ADR
+                                    Note = ""
+                                };
+                                
+                                // Обрабатываем телефоны для ВПК (НЕ извлекаем extension из телефона!)
+                                if (!string.IsNullOrWhiteSpace(phone))
+                                {
+                                    // Для ВПК просто нормализуем телефон без извлечения extension
+                                    var cleanPhone = new string(phone.Where(c => char.IsDigit(c) || c == '+').ToArray());
+                                    var normalized = RuPhone.NormalizeToE164RU(cleanPhone);
+                                    
+                                    if (!string.IsNullOrEmpty(normalized))
+                                    {
+                                        if (IsMobileNumber(normalized))
+                                            contact.MobileE164 = normalized;
+                                        else
+                                            contact.WorkE164 = normalized;
+                                    }
                                 }
                                 
-                                if (!string.IsNullOrEmpty(extension))
+                                if (!string.IsNullOrWhiteSpace(internalPhone))
                                 {
-                                    contact.Ext = extension;
+                                    // Для ВПК внутренний номер - это extension, не Note
+                                    // Если несколько номеров, берем первый
+                                    var cleanExt = internalPhone.Split(new[] { ',', ';', ' ' }, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault()?.Trim();
+                                    if (!string.IsNullOrEmpty(cleanExt))
+                                    {
+                                        contact.Ext = new string(cleanExt.Where(char.IsDigit).ToArray());
+                                    }
                                 }
+                                
+                                contacts.Add(contact);
                             }
-
-                            if (!string.IsNullOrWhiteSpace(internalPhone))
+                            else
                             {
-                                if (string.IsNullOrEmpty(contact.WorkE164))
-                                    contact.WorkE164 = internalPhone;
-                                else
-                                    contact.Note = $"Внутренний: {internalPhone}";
-                            }
+                                // Нормализованный файл от других парсеров (ВИЦ, ВЗК, ЗЗГТ)
+                                var organization = dataRow.GetCell(1)?.ToString()?.Trim() ?? "";   // Колонка 1 - Организация
+                                var name = dataRow.GetCell(3)?.ToString()?.Trim() ?? "";           // Колонка 3 - ФИО
+                                var position = dataRow.GetCell(4)?.ToString()?.Trim() ?? "";       // Колонка 4 - Должность
+                                var email = dataRow.GetCell(5)?.ToString()?.Trim() ?? "";          // Колонка 5 - Email
+                                var phone = dataRow.GetCell(6)?.ToString()?.Trim() ?? "";          // Колонка 6 - Телефон
+                                var internalPhone = dataRow.GetCell(7)?.ToString()?.Trim() ?? "";   // Колонка 7 - Внутренний
 
-                            contacts.Add(contact);
-                            System.Diagnostics.Debug.WriteLine($"[DEBUG] Добавлен контакт: {name}");
+                                if (string.IsNullOrWhiteSpace(name))
+                                    continue;
+
+                                // Очищаем переносы строк из имени и должности
+                                name = System.Text.RegularExpressions.Regex.Replace(name.Replace("\n", " ").Replace("\r", " "), @"\s+", " ").Trim();
+                                position = System.Text.RegularExpressions.Regex.Replace(position.Replace("\n", " ").Replace("\r", " "), @"\s+", " ").Trim();
+
+                                var contact = new AppleVCardWriter.Contact
+                                {
+                                    FullName = name,
+                                    OrgOrDept = organization, // Для других парсеров это действительно организация
+                                    Title = position,
+                                    Email = !string.IsNullOrWhiteSpace(email) ? email : "",
+                                    Note = ""
+                                };
+                                
+                                // Обрабатываем телефоны для других парсеров
+                                if (!string.IsNullOrWhiteSpace(phone))
+                                {
+                                    var (mainPhone, extension, additionalPhones) = ProcessPhoneString(phone);
+                                    if (!string.IsNullOrEmpty(mainPhone))
+                                    {
+                                        if (IsMobileNumber(mainPhone))
+                                            contact.MobileE164 = mainPhone;
+                                        else
+                                            contact.WorkE164 = mainPhone;
+                                    }
+                                    
+                                    if (!string.IsNullOrEmpty(extension))
+                                    {
+                                        contact.Ext = extension;
+                                    }
+                                }
+                                
+                                if (!string.IsNullOrWhiteSpace(internalPhone))
+                                {
+                                    // Для других парсеров внутренний номер тоже extension
+                                    // Если несколько номеров, берем первый
+                                    var cleanExt = internalPhone.Split(new[] { ',', ';', ' ' }, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault()?.Trim();
+                                    if (!string.IsNullOrEmpty(cleanExt) && string.IsNullOrEmpty(contact.Ext))
+                                    {
+                                        contact.Ext = new string(cleanExt.Where(char.IsDigit).ToArray());
+                                    }
+                                }
+                                
+                                contacts.Add(contact);
+                            }
                         }
                         catch (Exception ex)
                         {

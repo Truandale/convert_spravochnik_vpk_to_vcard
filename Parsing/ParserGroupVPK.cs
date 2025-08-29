@@ -55,21 +55,24 @@ namespace Converter.Parsing
                 var cols = HeaderFinder.MapColumns("ВИЦ", headersRaw, headersCanon);
 
                 Console.WriteLine($"[ВИЦ] Найдена строка заголовков: {headerRowIndex}, колонки: {string.Join(", ", cols.Keys)}");
+                Console.WriteLine($"[ВИЦ] Индексы колонок: {string.Join(", ", cols.Select(x => $"{x.Key}={x.Value}"))}");
 
                 for (int r = headerRowIndex + 1; r <= sh.LastRowNum; r++)
                 {
                     var row = sh.GetRow(r);
                     if (row == null) continue;
 
-                    // Читаем поля через HeaderFinder
-                    string name = HeaderFinder.ReadCell(row, cols.GetValueOrDefault("fio", -1));
-                    string position = HeaderFinder.ReadCell(row, cols.GetValueOrDefault("title", -1));
-                    string email = HeaderFinder.ReadCell(row, cols.GetValueOrDefault("email", -1));
-                    string mobile = HeaderFinder.ReadCell(row, cols.GetValueOrDefault("mobile", -1));
-                    string extra = HeaderFinder.ReadCell(row, cols.GetValueOrDefault("extra", -1));
-                    string internalNo = HeaderFinder.ReadCell(row, cols.GetValueOrDefault("ext", -1));
-                    string org = HeaderFinder.ReadCell(row, cols.GetValueOrDefault("org", -1));
-                    string dep = HeaderFinder.ReadCell(row, cols.GetValueOrDefault("department", -1));
+                    try
+                    {
+                        // Читаем поля через HeaderFinder
+                        string name = HeaderFinder.ReadCell(row, cols.GetValueOrDefault("fio", -1));
+                        string position = HeaderFinder.ReadCell(row, cols.GetValueOrDefault("title", -1));
+                        string email = HeaderFinder.ReadCell(row, cols.GetValueOrDefault("email", -1));
+                        string mobile = HeaderFinder.ReadCell(row, cols.GetValueOrDefault("mobile", -1));
+                        string extra = HeaderFinder.ReadCell(row, cols.GetValueOrDefault("extra", -1));
+                        string internalNo = HeaderFinder.ReadCell(row, cols.GetValueOrDefault("ext", -1));
+                        string org = HeaderFinder.ReadCell(row, cols.GetValueOrDefault("org", -1));
+                        string dep = HeaderFinder.ReadCell(row, cols.GetValueOrDefault("department", -1));
 
                     // Пропускаем строки без основных данных (телефонов)
                     if (string.IsNullOrWhiteSpace(mobile) && string.IsNullOrWhiteSpace(extra))
@@ -136,6 +139,12 @@ namespace Converter.Parsing
                         Phone         = phone,
                         InternalPhone = finalInternalPhone
                     });
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"[ERROR] Ошибка обработки строки {r}: {ex.Message}");
+                        continue;
+                    }
                 }
             }
 

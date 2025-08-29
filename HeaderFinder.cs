@@ -126,11 +126,23 @@ namespace convert_spravochnik_vpk_to_vcard
         /// </summary>
         public static string ReadCell(IRow row, int columnIndex)
         {
-            if (row == null || columnIndex < 0 || columnIndex >= row.LastCellNum)
+            if (row == null || columnIndex < 0)
                 return "";
                 
-            var cell = row.GetCell(columnIndex);
-            return cell?.ToString()?.Trim() ?? "";
+            // Дополнительная проверка: если индекс больше чем количество ячеек в строке
+            if (columnIndex >= row.LastCellNum)
+                return "";
+                
+            try
+            {
+                var cell = row.GetCell(columnIndex);
+                return cell?.ToString()?.Trim() ?? "";
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ERROR] Ошибка чтения ячейки row={row.RowNum}, col={columnIndex}: {ex.Message}");
+                return "";
+            }
         }
     }
 }

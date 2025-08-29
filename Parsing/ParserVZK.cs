@@ -35,6 +35,12 @@ namespace Converter.Parsing
             var sh = wb.GetSheet("АО Завод Корпусов") ?? wb.GetSheetAt(0);
             if (sh == null) throw new InvalidOperationException("Не найден лист Excel.");
 
+            // Проверяем название листа - должно содержать "завод" для ВЗК
+            if (!sh.SheetName.ToLowerInvariant().Contains("завод"))
+            {
+                throw new InvalidOperationException($"[{Name}] Пропуск «{sh.SheetName}»: Лист называется '{sh.SheetName}', но ожидается название с 'завод' для ВЗК.");
+            }
+
             var header = sh.GetRow(sh.FirstRowNum);
             if (header == null) throw new InvalidOperationException("Не найдена строка заголовков.");
 
