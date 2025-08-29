@@ -6,3 +6,21 @@ obj/
 *.cache
 *.tmp
 .vs/
+
+# Temporary test output files
+*_output.txt
+debug_*.txt
+test_*.txt
+headers_output.txt
+vpk_test_result.txt
+
+# Visual Studio files
+*.user
+*.suo
+
+# Temporary Excel files
+~$*.xlsx
+~$*.xls
+
+# Log files
+*.log
